@@ -35,6 +35,8 @@ model Device {
   lastDisplayedImage     Image?    @relation("LastDisplayed", fields: [lastDisplayedImageId], references: [id], onDelete: SetNull)
   lastDisplayedImageName String?
   lastDisplayedAt        DateTime?
+  lastError              String?
+  lastErrorAt            DateTime?
   createdAt              DateTime  @default(now())
   pairing                Pairing?
 

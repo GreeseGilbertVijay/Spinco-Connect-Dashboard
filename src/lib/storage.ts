@@ -1,16 +1,23 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { mkdir, open, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { Readable } from "node:stream";
 import sharp from "sharp";
 
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 export const MAX_IMAGE_REQUEST_BYTES = MAX_IMAGE_BYTES + 128 * 1024;
+export const MAX_VIDEO_BYTES = 200 * 1024 * 1024;
 const MAX_IMAGE_PIXELS = 80_000_000;
 const allowedTypes = new Map([
   ["image/jpeg", ".jpg"],
   ["image/png", ".png"],
   ["image/webp", ".webp"],
   ["image/gif", ".gif"],
+]);
+const videoExtensions = new Map([
+  ["video/mp4", ".mp4"],
+  ["video/webm", ".webm"],
 ]);
 
 export function detectImageType(bytes: Uint8Array) {
@@ -21,6 +28,14 @@ export function detectImageType(bytes: Uint8Array) {
     const signature = Buffer.from(bytes.subarray(0, 6)).toString("ascii");
     if (signature === "GIF87a" || signature === "GIF89a") return "image/gif";
   }
+  return null;
+}
+
+export function detectVideoType(bytes: Uint8Array) {
+  if (bytes.length >= 12 && Buffer.from(bytes.subarray(4, 8)).toString("ascii") === "ftyp") {
+    return Buffer.from(bytes.subarray(8, 12)).toString("ascii") === "qt  " ? null : "video/mp4";
+  }
+  if (bytes.length >= 4 && bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) return "video/webm";
   return null;
 }
 
@@ -51,8 +66,41 @@ export async function saveImage(bytes: Uint8Array, mimeType: string) {
   return storageKey;
 }
 
-export async function readStoredImage(storageKey: string) {
-  return readFile(resolveStorageKey(storageKey));
+export function parseByteRange(header: string | null, size: number) {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header?.trim() ?? "");
+  if (!match || (!match[1] && !match[2])) return null;
+  const start = match[1] ? Number(match[1]) : Math.max(0, size - Number(match[2]));
+  const end = match[1] && match[2] ? Math.min(Number(match[2]), size - 1) : size - 1;
+  return start > end ? "unsatisfiable" : { start, end };
+}
+
+// Returns null when the file is missing from disk so callers can answer with a clear 404.
+export async function storedFileResponse(storageKey: string, mimeType: string, cacheControl: string, rangeHeader: string | null) {
+  const filePath = resolveStorageKey(storageKey);
+  let size: number;
+  try {
+    size = (await stat(filePath)).size;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+    throw error;
+  }
+  const range = parseByteRange(rangeHeader, size);
+  if (range === "unsatisfiable") {
+    return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${size}` } });
+  }
+  const { start, end } = range ?? { start: 0, end: size - 1 };
+  const stream = Readable.toWeb(createReadStream(filePath, { start, end })) as ReadableStream<Uint8Array>;
+  return new Response(stream, {
+    status: range ? 206 : 200,
+    headers: {
+      "Content-Type": mimeType,
+      "Content-Length": String(end - start + 1),
+      "Accept-Ranges": "bytes",
+      "Cache-Control": cacheControl,
+      "X-Content-Type-Options": "nosniff",
+      ...(range ? { "Content-Range": `bytes ${start}-${end}/${size}` } : {}),
+    },
+  });
 }
 
 export async function deleteStoredImage(storageKey: string) {
@@ -69,6 +117,45 @@ export function isAllowedImageType(mimeType: string) {
 }
 
 export class UploadTooLargeError extends Error {}
+export class UnsupportedVideoError extends Error {}
+
+// Videos are streamed to disk so a large upload is never held in memory.
+export async function saveVideoStream(body: ReadableStream<Uint8Array>) {
+  const directory = uploadDirectory();
+  await mkdir(directory, { recursive: true });
+  const id = randomUUID();
+  const temporaryPath = resolveStorageKey(`${id}.upload`);
+  const file = await open(temporaryPath, "wx+");
+  let closed = false;
+  try {
+    const reader = body.getReader();
+    let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_VIDEO_BYTES) {
+        await reader.cancel();
+        throw new UploadTooLargeError("Video exceeds the maximum size");
+      }
+      await file.appendFile(value);
+    }
+    const header = new Uint8Array(12);
+    await file.read(header, 0, header.length, 0);
+    await file.close();
+    closed = true;
+    const mimeType = detectVideoType(header);
+    const extension = mimeType && videoExtensions.get(mimeType);
+    if (!mimeType || !extension) throw new UnsupportedVideoError("Unsupported video format");
+    const storageKey = `${id}${extension}`;
+    await rename(temporaryPath, resolveStorageKey(storageKey));
+    return { storageKey, mimeType, size };
+  } catch (error) {
+    if (!closed) await file.close();
+    await unlink(temporaryPath).catch(() => undefined);
+    throw error;
+  }
+}
 
 export async function readMultipartForm(request: Request) {
   const declaredLength = Number(request.headers.get("content-length"));

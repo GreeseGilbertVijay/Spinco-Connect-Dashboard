@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
 import { assertSameOrigin, errorResponse } from "@/lib/http";
+import { notRevoked } from "@/lib/device-rules";
 import { prisma } from "@/lib/prisma";
 
 const updateSchema = z.object({
@@ -17,7 +18,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (!parsed.success) return errorResponse("Enter a TV name and/or a valid image fit.", 400);
   const { id } = await context.params;
   const result = await prisma.device.updateMany({
-    where: { id, revokedAt: null },
+    where: { id, ...notRevoked },
     data: parsed.data,
   });
   if (!result.count) return errorResponse("TV not found or access has been revoked.", 404);

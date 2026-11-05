@@ -71,18 +71,21 @@ h1 { margin: 8px 0 6px; font-size: clamp(26px, 3vw, 35px); letter-spacing: -.8px
 .status.online { color: #73dcae; }
 .status.online::before { background: #6de0ad; box-shadow: 0 0 10px #6de0ad66; }
 .preview-wrap { display: grid; height: 142px; margin: 0 17px; overflow: hidden; place-items: center; border: 1px solid #223039; border-radius: 7px; background: repeating-linear-gradient(45deg,#121b20,#121b20 10px,#151f24 10px,#151f24 20px); }
-.preview-wrap img { width: 100%; height: 100%; object-fit: contain; }
+.preview-wrap img, .preview-wrap video { width: 100%; height: 100%; object-fit: contain; }
 .preview-empty { color: #6f7f87; font-size: 11px; text-align: center; }
 .device-info { display: flex; justify-content: space-between; gap: 12px; padding: 12px 18px; color: #87969e; font-size: 11px; }
 .device-info strong { display: block; margin-top: 4px; color: #d3dcdf; font-size: 11px; font-weight: 500; }
 .device-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 17px 15px; border-top: 1px solid #202c33; }
+.device-status { padding: 10px 17px; border-top: 1px solid #202c33; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.device-status.error { background: #261719; color: #ffb6b9; }
+.device-status.pending { background: #12241c; color: #9be4bd; }
 .select { min-width: 0; height: 34px; padding: 0 9px; border: 1px solid #304049; border-radius: 7px; background: #0f171c; color: #d5dfe2; font-size: 11px; }
 .select.image-select { flex: 1; min-width: 120px; }
 .library { margin-top: 37px; }
 .library-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 13px; }
 .image-card { overflow: hidden; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
 .image-thumb { display: grid; height: 125px; place-items: center; background: #0e151a; }
-.image-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.image-thumb img, .image-thumb video { width: 100%; height: 100%; object-fit: contain; }
 .image-details { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px; }
 .image-details strong { display: block; max-width: 180px; overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .image-details span { display: block; margin-top: 5px; color: #72828a; font-size: 10px; }

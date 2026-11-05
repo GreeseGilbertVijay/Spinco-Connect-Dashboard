@@ -2,7 +2,7 @@ import { requireDevice } from "@/lib/auth";
 import { canReadAssignedImage } from "@/lib/device-rules";
 import { errorResponse } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
-import { readStoredImage } from "@/lib/storage";
+import { storedFileResponse } from "@/lib/storage";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -16,13 +16,6 @@ export async function GET(request: Request, context: RouteContext) {
   }
   const image = await prisma.image.findUnique({ where: { id } });
   if (!image) return errorResponse("Assigned image was not found.", 404);
-  const bytes = await readStoredImage(image.storageKey);
-  return new Response(new Uint8Array(bytes), {
-    headers: {
-      "Content-Type": image.mimeType,
-      "Content-Length": String(bytes.byteLength),
-      "Cache-Control": "no-store",
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
+  const response = await storedFileResponse(image.storageKey, image.mimeType, "no-store", request.headers.get("range"));
+  return response ?? errorResponse("The file for this assignment is missing from the server.", 404);
 }

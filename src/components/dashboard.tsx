@@ -14,9 +14,30 @@ type DeviceItem = {
   lastSeenAt: string | null;
   appState: string;
   fit: "contain" | "cover";
-  assignedImage: { id: string; name: string; url: string } | null;
+  assignedImage: { id: string; name: string; mimeType: string; url: string } | null;
+  lastDisplayedImageId: string | null;
   lastDisplayed: { name: string; at: string } | null;
+  lastError: string | null;
+  lastErrorAt: string | null;
 };
+
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 200 * 1024 * 1024;
+
+function MediaPreview({ item, alt }: { item: { mimeType: string; url: string }; alt: string }) {
+  return item.mimeType.startsWith("video/")
+    ? <video src={item.url} aria-label={alt} muted playsInline preload="metadata" controls />
+    : <Image src={item.url} alt={alt} width={800} height={450} unoptimized />;
+}
+
+function deviceStatus(device: DeviceItem, actionError?: string) {
+  if (actionError) return { tone: "error", text: actionError };
+  if (device.lastError) return { tone: "error", text: `TV error${device.lastErrorAt ? ` (${ago(device.lastErrorAt)})` : ""}: ${device.lastError}` };
+  if (!device.assignedImage || device.lastDisplayedImageId === device.assignedImage.id) return null;
+  return device.online
+    ? { tone: "pending", text: `Sending ${device.assignedImage.name} to the TV...` }
+    : { tone: "error", text: "This TV is offline. The content will appear when it reconnects." };
+}
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { ...init, cache: "no-store" });
@@ -45,6 +66,7 @@ export default function Dashboard({ email }: { email: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [deviceErrors, setDeviceErrors] = useState<Record<string, string>>({});
   const [modal, setModal] = useState(false);
   const [pairCode, setPairCode] = useState("");
   const [deviceName, setDeviceName] = useState("");
@@ -74,16 +96,19 @@ export default function Dashboard({ email }: { email: string }) {
     };
   }, [refresh]);
 
-  async function action<T>(operation: () => Promise<T>, success: string) {
+  async function action<T>(operation: () => Promise<T>, success: string, deviceId?: string) {
     setBusy(true);
     setError("");
     setNotice("");
+    if (deviceId) setDeviceErrors((previous) => Object.fromEntries(Object.entries(previous).filter(([id]) => id !== deviceId)));
     try {
       await operation();
       setNotice(success);
       await refresh();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "The action could not be completed.");
+      const message = reason instanceof Error ? reason.message : "The action could not be completed.";
+      if (deviceId) setDeviceErrors((previous) => ({ ...previous, [deviceId]: message }));
+      else setError(message);
     } finally {
       setBusy(false);
     }
@@ -107,11 +132,21 @@ export default function Dashboard({ email }: { email: string }) {
     }, "TV registered. It will connect automatically.");
   }
 
-  async function uploadImage(event: ChangeEvent<HTMLInputElement>) {
+  async function uploadMedia(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
     event.target.value = "";
-    if (file.size > 10 * 1024 * 1024) {
+    if (file.type.startsWith("video/")) {
+      if (file.size > MAX_VIDEO_BYTES) {
+        setError("Videos must be smaller than 200 MB.");
+        return;
+      }
+      await action(async () => {
+        await request("/api/admin/videos", { method: "POST", headers: { "Content-Type": file.type, "X-File-Name": encodeURIComponent(file.name) }, body: file });
+      }, "Video uploaded to your library.");
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
       setError("Images must be smaller than 10 MB.");
       return;
     }
@@ -137,7 +172,7 @@ export default function Dashboard({ email }: { email: string }) {
         <div className="side-label">Workspace</div>
         <button className="nav-item active"><span className="nav-icon">▦</span><span>Overview</span></button>
         <button className="nav-item" onClick={() => document.getElementById("player-list")?.scrollIntoView({ behavior: "smooth" })}><span className="nav-icon">▣</span><span>Players</span></button>
-        <button className="nav-item" onClick={() => document.getElementById("library")?.scrollIntoView({ behavior: "smooth" })}><span className="nav-icon">▧</span><span>Image library</span></button>
+        <button className="nav-item" onClick={() => document.getElementById("library")?.scrollIntoView({ behavior: "smooth" })}><span className="nav-icon">▧</span><span>Media library</span></button>
         <div className="side-foot">Player connectivity is not a physical TV power indicator.<br />Spinco Connect · Local deployment</div>
       </aside>
       <main className="main-area">
@@ -155,7 +190,7 @@ export default function Dashboard({ email }: { email: string }) {
           <div className="metric-grid">
             <div className="metric"><div className="metric-label">Registered players</div><div className="metric-row"><span className="metric-value">{loading ? "—" : devices.length}</span><span className="metric-note">all registered screens</span></div></div>
             <div className="metric"><div className="metric-label">Player connectivity</div><div className="metric-row"><span className="metric-dot" /><span className="metric-value">{loading ? "—" : devices.filter((device) => device.online).length}</span><span className="metric-note">online now</span></div></div>
-            <div className="metric"><div className="metric-label">Image library</div><div className="metric-row"><span className="metric-value">{loading ? "—" : images.length}</span><span className="metric-note">reusable images</span></div></div>
+            <div className="metric"><div className="metric-label">Media library</div><div className="metric-row"><span className="metric-value">{loading ? "—" : images.length}</span><span className="metric-note">reusable files</span></div></div>
           </div>
 
           <section id="player-list">
@@ -163,54 +198,60 @@ export default function Dashboard({ email }: { email: string }) {
             {loading ? <div className="empty-state"><span className="spinner" /></div> : devices.length === 0 ? (
               <div className="empty-state"><strong>No TVs connected yet</strong>Open the Spinco Connect app on your TV, then pair it using the code on screen.</div>
             ) : (
-              <div className="device-grid">{devices.map((device) => (
+              <div className="device-grid">{devices.map((device) => {
+                const status = deviceStatus(device, deviceErrors[device.id]);
+                return (
                 <article className="device-card" key={device.id}>
                   <div className="device-top">
                     <div><div className="device-name"><span className={`status ${device.online ? "online" : ""}`}>{device.online ? "Online" : "Offline"}</span><h3>{device.name}</h3></div><div className="device-id">ID&nbsp; {device.deviceId}</div></div>
                     <button className="button quiet" disabled={busy} onClick={() => {
                       const name = window.prompt("Enter a new TV name", device.name);
-                      if (name?.trim()) void action(() => request(`/api/admin/devices/${device.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) }), "TV name updated.");
+                      if (name?.trim()) void action(() => request(`/api/admin/devices/${device.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) }), "TV name updated.", device.id);
                     }}>Rename</button>
                   </div>
-                  <div className="preview-wrap">{device.assignedImage ? <Image src={device.assignedImage.url} alt={`Assigned to ${device.name}`} width={800} height={450} unoptimized /> : <span className="preview-empty">No image assigned</span>}</div>
+                  <div className="preview-wrap">{device.assignedImage ? <MediaPreview item={device.assignedImage} alt={`Assigned to ${device.name}`} /> : <span className="preview-empty">Nothing assigned</span>}</div>
                   <div className="device-info">
                     <div>Last seen<strong>{ago(device.lastSeenAt)}{device.appState === "background" && device.online ? " · app background" : ""}</strong></div>
                     <div>Last displayed<strong>{device.lastDisplayed?.name ?? "Not acknowledged yet"}</strong></div>
                   </div>
                   <div className="device-controls">
-                    <select className="select image-select" aria-label={`Assign image to ${device.name}`} disabled={!!device.revokedAt || busy} value={device.assignedImage?.id ?? ""} onChange={(event) => void action(
+                    <select className="select image-select" aria-label={`Assign content to ${device.name}`} disabled={!!device.revokedAt || busy} value={device.assignedImage?.id ?? ""} onChange={(event) => void action(
                       () => request(`/api/admin/devices/${device.id}/assignment`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ imageId: event.target.value || null }) }),
-                      "Image assignment updated.",
+                      "Assignment updated.",
+                      device.id,
                     )}>
-                      <option value="">No image assigned</option>{images.map((image) => <option key={image.id} value={image.id}>{image.name}</option>)}
+                      <option value="">Nothing assigned</option>{images.map((image) => <option key={image.id} value={image.id}>{image.name}</option>)}
                     </select>
-                    <select className="select" aria-label={`Image fit for ${device.name}`} disabled={!!device.revokedAt || busy} value={device.fit} onChange={(event) => void action(
+                    <select className="select" aria-label={`Content fit for ${device.name}`} disabled={!!device.revokedAt || busy} value={device.fit} onChange={(event) => void action(
                       () => request(`/api/admin/devices/${device.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fit: event.target.value }) }),
-                      "Image fit updated.",
+                      "Fit updated.",
+                      device.id,
                     )}><option value="contain">Contain</option><option value="cover">Cover</option></select>
                     {device.revokedAt ? <span className="section-meta">Access revoked</span> : <>
                       <button className="button quiet danger" disabled={busy} onClick={() => {
-                        if (window.confirm(`Revoke access for ${device.name}? The player will need to be paired again.`)) void action(() => request(`/api/admin/devices/${device.id}/revoke`, { method: "POST" }), "Device access revoked.");
+                        if (window.confirm(`Revoke access for ${device.name}? The player will need to be paired again.`)) void action(() => request(`/api/admin/devices/${device.id}/revoke`, { method: "POST" }), "Device access revoked.", device.id);
                       }}>Revoke</button>
                       <button className="button quiet danger" disabled={busy} onClick={() => {
-                        if (window.confirm(`Delete ${device.name}? This removes its registration.`)) void action(() => request(`/api/admin/devices/${device.id}`, { method: "DELETE" }), "TV deleted.");
+                        if (window.confirm(`Delete ${device.name}? This removes its registration.`)) void action(() => request(`/api/admin/devices/${device.id}`, { method: "DELETE" }), "TV deleted.", device.id);
                       }}>Delete</button>
                     </>}
                   </div>
+                  {status && <div className={`device-status ${status.tone}`} role={status.tone === "error" ? "alert" : "status"}>{status.text}</div>}
                 </article>
-              ))}</div>
+                );
+              })}</div>
             )}
           </section>
 
           <section className="library" id="library">
-            <div className="section-head"><div><h2>Image library</h2><span className="section-meta">JPEG, PNG, GIF or WebP · up to 10 MB each</span></div><label className="button" htmlFor="image-upload">＋&nbsp; Upload image</label><input id="image-upload" type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden onChange={(event) => void uploadImage(event)} /></div>
-            {loading ? <div className="empty-state"><span className="spinner" /></div> : images.length === 0 ? <div className="empty-state"><strong>Your image library is empty</strong>Upload an image to assign it to one or more TVs.</div> : (
+            <div className="section-head"><div><h2>Media library</h2><span className="section-meta">Images: JPEG, PNG, GIF or WebP up to 10 MB · Videos: MP4 or WebM up to 200 MB</span></div><label className="button" htmlFor="media-upload">＋&nbsp; Upload media</label><input id="media-upload" type="file" accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm" hidden disabled={busy} onChange={(event) => void uploadMedia(event)} /></div>
+            {loading ? <div className="empty-state"><span className="spinner" /></div> : images.length === 0 ? <div className="empty-state"><strong>Your media library is empty</strong>Upload an image or video to assign it to one or more TVs.</div> : (
               <div className="library-grid">{images.map((image) => (
                 <article className="image-card" key={image.id}>
-                  <div className="image-thumb"><Image src={image.url} alt={image.name} width={800} height={450} unoptimized /></div>
+                  <div className="image-thumb"><MediaPreview item={image} alt={image.name} /></div>
                   <div className="image-details"><div><strong title={image.name}>{image.name}</strong><span>{formatSize(image.size)} · {image.assignedCount} assigned</span></div>
-                    <button aria-label={`Delete ${image.name}`} className="button quiet danger" disabled={busy || image.assignedCount > 0} title={image.assignedCount ? "Unassign this image before deleting it" : "Delete image"} onClick={() => {
-                      if (window.confirm(`Delete ${image.name} from your library?`)) void action(() => request(`/api/admin/images/${image.id}`, { method: "DELETE" }), "Image deleted.");
+                    <button aria-label={`Delete ${image.name}`} className="button quiet danger" disabled={busy || image.assignedCount > 0} title={image.assignedCount ? "Unassign this file before deleting it" : "Delete file"} onClick={() => {
+                      if (window.confirm(`Delete ${image.name} from your library?`)) void action(() => request(`/api/admin/images/${image.id}`, { method: "DELETE" }), "File deleted.");
                     }}>Delete</button>
                   </div>
                 </article>

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { requireDevice } from "@/lib/auth";
 import { errorResponse } from "@/lib/http";
+import { notRevoked } from "@/lib/device-rules";
 import { prisma } from "@/lib/prisma";
 
 const acknowledgementSchema = z.object({
@@ -18,7 +19,7 @@ export async function POST(request: Request) {
   const updated = await prisma.device.updateMany({
     where: {
       id: device.id,
-      revokedAt: null,
+      ...notRevoked,
       assignedImageId: parsed.data.imageId,
       assignmentVersion: parsed.data.version,
     },
@@ -26,6 +27,8 @@ export async function POST(request: Request) {
       lastDisplayedImageId: parsed.data.imageId,
       lastDisplayedImageName: image.originalName,
       lastDisplayedAt: new Date(),
+      lastError: null,
+      lastErrorAt: null,
     },
   });
   if (!updated.count) return errorResponse("The acknowledgement does not match the current assignment.", 409);

@@ -17,3 +17,7 @@ export function canReadAssignedImage(
     device.assignmentVersion === version
   );
 }
+
+// MongoDB treats a missing field and an explicit null differently, and Prisma leaves
+// revokedAt unset on new devices, so `revokedAt: null` alone never matches them.
+export const notRevoked = { OR: [{ revokedAt: null }, { revokedAt: { isSet: false } }] };

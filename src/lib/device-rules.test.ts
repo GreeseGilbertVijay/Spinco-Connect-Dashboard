@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canReadAssignedImage, isPairingExpired, isPlayerOnline } from "./device-rules";
+import { canReadAssignedImage, isPairingExpired, isPlayerOnline, notRevoked } from "./device-rules";
 
 const now = new Date("2026-10-30T00:00:00.000Z");
 
@@ -27,5 +27,12 @@ describe("device image isolation", () => {
     expect(canReadAssignedImage(active, "image-b", 3)).toBe(false);
     expect(canReadAssignedImage(active, "image-a", 2)).toBe(false);
     expect(canReadAssignedImage({ ...active, revokedAt: now }, "image-a", 3)).toBe(false);
+  });
+});
+
+describe("active device filter", () => {
+  it("matches devices whose revokedAt was never written to MongoDB", () => {
+    expect(notRevoked.OR).toContainEqual({ revokedAt: { isSet: false } });
+    expect(notRevoked.OR).toContainEqual({ revokedAt: null });
   });
 });

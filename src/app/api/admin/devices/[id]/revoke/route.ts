@@ -1,5 +1,6 @@
 import { requireAdmin } from "@/lib/auth";
 import { assertSameOrigin, errorResponse } from "@/lib/http";
+import { notRevoked } from "@/lib/device-rules";
 import { prisma } from "@/lib/prisma";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -9,7 +10,7 @@ export async function POST(request: Request, context: RouteContext) {
   if (!(await requireAdmin())) return errorResponse("Sign in required.", 401);
   const { id } = await context.params;
   const device = await prisma.device.updateMany({
-    where: { id, revokedAt: null },
+    where: { id, ...notRevoked },
     data: { revokedAt: new Date() },
   });
   if (!device.count) return errorResponse("TV not found or already revoked.", 404);

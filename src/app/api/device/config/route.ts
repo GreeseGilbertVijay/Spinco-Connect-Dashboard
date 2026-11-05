@@ -6,7 +6,7 @@ export async function GET(request: Request) {
   const device = await requireDevice(request);
   if (!device) return errorResponse("Device access is invalid or revoked.", 401);
   const assignedImage = device.assignedImageId
-    ? await prisma.image.findUnique({ where: { id: device.assignedImageId }, select: { mimeType: true } })
+    ? await prisma.image.findUnique({ where: { id: device.assignedImageId }, select: { mimeType: true, size: true } })
     : null;
   return Response.json(
     {
@@ -17,6 +17,7 @@ export async function GET(request: Request) {
             version: device.assignmentVersion,
             url: `/api/device/images/${encodeURIComponent(device.assignedImageId)}?version=${device.assignmentVersion}`,
             mimeType: assignedImage?.mimeType ?? "image/jpeg",
+            size: assignedImage?.size ?? 0,
           }
         : null,
     },
