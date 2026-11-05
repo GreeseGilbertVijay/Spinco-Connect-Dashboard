@@ -21,8 +21,8 @@ export default function LoginForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Unable to sign in.");
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error ?? `Server error (${response.status}). Please try again later.`);
       router.replace("/");
       router.refresh();
     } catch (reason) {
