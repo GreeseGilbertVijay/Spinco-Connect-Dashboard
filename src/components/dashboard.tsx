@@ -45,9 +45,15 @@ function deviceStatus(device: DeviceItem, actionError?: string) {
     : { tone: "error", text: "This TV is offline. The content will appear when it reconnects." };
 }
 
+// The backend is down or unreachable, as opposed to refusing one particular request.
+class ConnectionError extends Error {}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { ...init, cache: "no-store" });
+  const response = await fetch(url, { ...init, cache: "no-store" }).catch(() => {
+    throw new ConnectionError("The server could not be reached.");
+  });
   const data = await response.json().catch(() => ({})) as { error?: string } & T;
+  if (response.status >= 500) throw new ConnectionError(data.error ?? "The server is not responding.");
   if (!response.ok) throw new Error(data.error ?? "Request failed. Please try again.");
   return data;
 }
@@ -63,6 +69,8 @@ function ago(value: string | null) {
 function formatSize(bytes: number) {
   return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
+
+type ConfirmDialog = { title: string; message: string; confirmLabel: string; danger?: boolean; run: () => void };
 
 export default function Dashboard({ email }: { email: string }) {
   const router = useRouter();
@@ -80,6 +88,13 @@ export default function Dashboard({ email }: { email: string }) {
   const [slideshowDevice, setSlideshowDevice] = useState<DeviceItem | null>(null);
   const [slideIds, setSlideIds] = useState<string[]>([]);
   const [slideSeconds, setSlideSeconds] = useState(10);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog | null>(null);
+  const [renaming, setRenaming] = useState<DeviceItem | null>(null);
+  const [newName, setNewName] = useState("");
+  const [serverOffline, setServerOffline] = useState(false);
+  const [serverPopup, setServerPopup] = useState(false);
+  const [serverRetrying, setServerRetrying] = useState(false);
+  const [serverRetryFailed, setServerRetryFailed] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -90,8 +105,13 @@ export default function Dashboard({ email }: { email: string }) {
       setDevices(nextDevices);
       setImages(nextImages);
       setError("");
+      setServerOffline(false);
+      setServerPopup(false);
+      return true;
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Dashboard data could not be loaded.");
+      if (reason instanceof ConnectionError) setServerOffline(true);
+      else setError(reason instanceof Error ? reason.message : "Dashboard data could not be loaded.");
+      return false;
     } finally {
       setLoading(false);
     }
@@ -117,6 +137,7 @@ export default function Dashboard({ email }: { email: string }) {
       await refresh();
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : "The action could not be completed.";
+      if (reason instanceof ConnectionError) setServerOffline(true);
       if (deviceId) setDeviceErrors((previous) => ({ ...previous, [deviceId]: message }));
       else setError(message);
     } finally {
@@ -138,6 +159,26 @@ export default function Dashboard({ email }: { email: string }) {
       });
       closePairing();
     }, reconnecting ? "TV reconnected. Its content will return automatically." : "TV registered. It will connect automatically.");
+  }
+
+  async function reconnectServer() {
+    setServerRetrying(true);
+    setServerRetryFailed(false);
+    const connected = await refresh();
+    setServerRetrying(false);
+    setServerRetryFailed(!connected);
+  }
+
+  async function saveName(event: ChangeEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const device = renaming;
+    if (!device) return;
+    setRenaming(null);
+    await action(
+      () => request(`/api/admin/devices/${device.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName.trim() }) }),
+      "TV name updated.",
+      device.id,
+    );
   }
 
   function closePairing() {
@@ -219,7 +260,7 @@ export default function Dashboard({ email }: { email: string }) {
       <main className="main-area">
         <header className="topbar">
           <div className="topbar-caption">Workspace&nbsp; / &nbsp;<strong>Overview</strong></div>
-          <div className="account"><span>{email}</span><button className="button quiet" onClick={() => void logout()} disabled={busy}>Sign out</button><span className="avatar">{email.charAt(0).toUpperCase()}</span></div>
+          <div className="account"><span>{email}</span><button className="button quiet" onClick={() => void logout()} disabled={busy}>Sign out</button><span className="avatar">{email.charAt(0).toUpperCase()}</span>{serverOffline && <button className="server-dot" aria-label="Server offline. Open reconnect options" title="Server offline" onClick={() => { setServerRetryFailed(false); setServerPopup(true); }} />}</div>
         </header>
         <div className="content">
           <div className="page-heading">
@@ -245,10 +286,7 @@ export default function Dashboard({ email }: { email: string }) {
                 <article className="device-card" key={device.id}>
                   <div className="device-top">
                     <div><div className="device-name"><span className={`status ${device.online ? "online" : ""}`}>{device.online ? "Online" : "Offline"}</span><h3>{device.name}</h3></div><div className="device-id">ID&nbsp; {device.deviceId}</div></div>
-                    <button className="button quiet" disabled={busy || !!device.revokedAt} onClick={() => {
-                      const name = window.prompt("Enter a new TV name", device.name);
-                      if (name?.trim()) void action(() => request(`/api/admin/devices/${device.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) }), "TV name updated.", device.id);
-                    }}>Rename</button>
+                    <button className="button quiet" disabled={busy || !!device.revokedAt} onClick={() => { setNewName(device.name); setRenaming(device); }}>Rename</button>
                   </div>
                   <div className="preview-wrap">
                     {device.revokedAt ? <span className="preview-empty">Access revoked · nothing is showing on this TV</span> : device.assignedImage ? <MediaPreview item={device.assignedImage} alt={`Assigned to ${device.name}`} /> : <span className="preview-empty">Nothing assigned</span>}
@@ -274,12 +312,20 @@ export default function Dashboard({ email }: { email: string }) {
                     <button className="button quiet" disabled={!!device.revokedAt || busy || images.filter((image) => image.mimeType.startsWith("image/")).length < 2} title="Rotate several images on this TV" onClick={() => openSlideshow(device)}>Slideshow</button>
                     {device.revokedAt
                       ? <button className="button primary" disabled={busy} onClick={() => openReconnect(device)}>Reconnect</button>
-                      : <button className="button quiet danger" disabled={busy} onClick={() => {
-                        if (window.confirm(`Revoke access for ${device.name}? The player will need to be paired again.`)) void action(() => request(`/api/admin/devices/${device.id}/revoke`, { method: "POST" }), "Device access revoked.", device.id);
-                      }}>Revoke</button>}
-                    <button className="button quiet danger" disabled={busy} onClick={() => {
-                      if (window.confirm(`Delete ${device.name}? This removes its registration.`)) void action(() => request(`/api/admin/devices/${device.id}`, { method: "DELETE" }), "TV deleted.", device.id);
-                    }}>Delete</button>
+                      : <button className="button quiet danger" disabled={busy} onClick={() => setConfirmDialog({
+                        title: `Revoke ${device.name}?`,
+                        message: "The TV clears its content straight away and shows a code. You can reconnect it with that code later.",
+                        confirmLabel: "Revoke access",
+                        danger: true,
+                        run: () => void action(() => request(`/api/admin/devices/${device.id}/revoke`, { method: "POST" }), "Device access revoked.", device.id),
+                      })}>Revoke</button>}
+                    <button className="button quiet danger" disabled={busy} onClick={() => setConfirmDialog({
+                      title: `Delete ${device.name}?`,
+                      message: "This removes its registration and settings. The TV will have to be paired as a new TV.",
+                      confirmLabel: "Delete TV",
+                      danger: true,
+                      run: () => void action(() => request(`/api/admin/devices/${device.id}`, { method: "DELETE" }), "TV deleted.", device.id),
+                    })}>Delete</button>
                   </div>
                   {status && <div className={`device-status ${status.tone}`} role={status.tone === "error" ? "alert" : "status"}>{status.text}</div>}
                 </article>
@@ -295,9 +341,13 @@ export default function Dashboard({ email }: { email: string }) {
                 <article className="image-card" key={image.id}>
                   <div className="image-thumb"><MediaPreview item={image} alt={image.name} /></div>
                   <div className="image-details"><div><strong title={image.name}>{image.name}</strong><span>{formatSize(image.size)} · {image.assignedCount} assigned</span></div>
-                    <button aria-label={`Delete ${image.name}`} className="button quiet danger" disabled={busy || image.assignedCount > 0} title={image.assignedCount ? "Unassign this file before deleting it" : "Delete file"} onClick={() => {
-                      if (window.confirm(`Delete ${image.name} from your library?`)) void action(() => request(`/api/admin/images/${image.id}`, { method: "DELETE" }), "File deleted.");
-                    }}>Delete</button>
+                    <button aria-label={`Delete ${image.name}`} className="button quiet danger" disabled={busy || image.assignedCount > 0} title={image.assignedCount ? "Unassign this file before deleting it" : "Delete file"} onClick={() => setConfirmDialog({
+                      title: `Delete ${image.name}?`,
+                      message: "This permanently removes the file from your media library.",
+                      confirmLabel: "Delete file",
+                      danger: true,
+                      run: () => void action(() => request(`/api/admin/images/${image.id}`, { method: "DELETE" }), "File deleted."),
+                    })}>Delete</button>
                   </div>
                 </article>
               ))}</div>
@@ -313,6 +363,25 @@ export default function Dashboard({ email }: { email: string }) {
           <label className="field">TV name<input required maxLength={60} placeholder="Reception display" value={deviceName} onChange={(event) => setDeviceName(event.target.value)} /></label>
           <div className="modal-actions"><button type="button" className="button" onClick={closePairing}>Cancel</button><button type="submit" className="button primary" disabled={busy || pairCode.length !== 8 || !deviceName.trim()}>{busy ? "Connecting..." : reconnecting ? "Reconnect TV" : "Register TV"}</button></div>
         </form>
+      </div>}
+      {confirmDialog && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setConfirmDialog(null); }}>
+        <div className="modal" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
+          <h2 id="confirm-title">{confirmDialog.title}</h2><p>{confirmDialog.message}</p>
+          <div className="modal-actions"><button type="button" className="button" autoFocus onClick={() => setConfirmDialog(null)}>Cancel</button><button type="button" className={`button ${confirmDialog.danger ? "danger-solid" : "primary"}`} onClick={() => { confirmDialog.run(); setConfirmDialog(null); }}>{confirmDialog.confirmLabel}</button></div>
+        </div>
+      </div>}
+      {renaming && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setRenaming(null); }}>
+        <form className="modal" onSubmit={(event) => void saveName(event)}>
+          <h2>Rename {renaming.name}</h2>
+          <label className="field">TV name<input required autoFocus maxLength={60} value={newName} onChange={(event) => setNewName(event.target.value)} /></label>
+          <div className="modal-actions"><button type="button" className="button" onClick={() => setRenaming(null)}>Cancel</button><button type="submit" className="button primary" disabled={busy || !newName.trim()}>Save name</button></div>
+        </form>
+      </div>}
+      {serverPopup && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setServerPopup(false); }}>
+        <div className="modal" role="alertdialog" aria-modal="true" aria-labelledby="server-title">
+          <h2 id="server-title">Server offline</h2><p>{serverRetryFailed ? "Still unable to reach the server. Check that the backend is running and this computer is on the network." : "The dashboard cannot reach the server. The information on this page may be out of date, and changes will not be saved."}</p>
+          <div className="modal-actions"><button type="button" className="button" onClick={() => setServerPopup(false)}>Close</button><button type="button" className="button primary" autoFocus disabled={serverRetrying} onClick={() => void reconnectServer()}>{serverRetrying ? "Reconnecting..." : "Reconnect"}</button></div>
+        </div>
       </div>}
       {slideshowDevice && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSlideshowDevice(null); }}>
         <form className="modal wide" onSubmit={(event) => void saveSlideshow(event)}>

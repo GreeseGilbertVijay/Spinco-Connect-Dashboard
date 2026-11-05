@@ -37,6 +37,8 @@ button { cursor: pointer; }
 .topbar { display: flex; min-height: 75px; align-items: center; justify-content: space-between; padding: 0 42px; border-bottom: 1px solid #1e2b32; }
 .topbar-caption { color: #87959d; font-size: 13px; }
 .account { display: flex; align-items: center; gap: 12px; color: #c9d2d6; font-size: 13px; }
+.server-dot { width: 16px; height: 16px; padding: 0; border: 0; border-radius: 50%; background: #eb4d55; box-shadow: 0 0 0 4px #eb4d5533; cursor: pointer; }
+.server-dot:hover, .server-dot:focus-visible { outline: none; box-shadow: 0 0 0 6px #eb4d5566; }
 .avatar { display: grid; width: 34px; height: 34px; place-items: center; color: #17251f; background: #7fdcb5; border-radius: 50%; font-weight: 700; }
 .content { max-width: 1440px; margin: auto; padding: 38px 42px 60px; }
 .page-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 29px; }
@@ -48,6 +50,8 @@ h1 { margin: 8px 0 6px; font-size: clamp(26px, 3vw, 35px); letter-spacing: -.8px
 .button.primary { border-color: var(--accent); background: var(--accent); color: #092017; }
 .button.primary:hover { background: #83edbd; }
 .button.danger { color: #ff9a9a; }
+.button.danger-solid { border-color: #e5636b; background: #e5636b; color: #2a0b0d; }
+.button.danger-solid:hover { background: #f07c83; }
 .button.quiet { min-height: 32px; padding: 0 10px; background: transparent; font-size: 11px; }
 .button:disabled { opacity: .5; cursor: wait; }
 .metric-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 15px; margin-bottom: 31px; }
