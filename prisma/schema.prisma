@@ -1,0 +1,78 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/@prisma/client-spinco"
+}
+
+// This database is shared with other Spinco apps. Do not run `prisma db push`
+// against it: use `npm run db:indexes`, which only touches the collections below.
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model Admin {
+  id           String   @id @default(cuid()) @map("_id")
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  @@map("spinco_connect_admins")
+}
+
+model Device {
+  id                     String    @id @default(cuid()) @map("_id")
+  deviceId               String    @unique @default(uuid())
+  name                   String
+  tokenHash              String    @unique
+  revokedAt              DateTime?
+  lastSeenAt             DateTime?
+  appState               String    @default("unknown")
+  assignedImageId        String?
+  assignedImage          Image?    @relation("DeviceAssignment", fields: [assignedImageId], references: [id], onDelete: SetNull)
+  assignmentVersion      Int       @default(0)
+  fit                    String    @default("contain")
+  lastDisplayedImageId   String?
+  lastDisplayedImage     Image?    @relation("LastDisplayed", fields: [lastDisplayedImageId], references: [id], onDelete: SetNull)
+  lastDisplayedImageName String?
+  lastDisplayedAt        DateTime?
+  createdAt              DateTime  @default(now())
+  pairing                Pairing?
+
+  @@map("spinco_connect_devices")
+}
+
+model Image {
+  id           String   @id @default(cuid()) @map("_id")
+  originalName String
+  storageKey   String   @unique
+  mimeType     String
+  size         Int
+  createdAt    DateTime @default(now())
+  assignedTo   Device[] @relation("DeviceAssignment")
+  displayedBy  Device[] @relation("LastDisplayed")
+
+  @@map("spinco_connect_images")
+}
+
+model Pairing {
+  id             String    @id @default(cuid()) @map("_id")
+  codeHash       String    @unique
+  createdAt      DateTime  @default(now())
+  expiresAt      DateTime
+  pairedAt       DateTime?
+  encryptedToken String?
+  // Enforced by a partial index in scripts/create-indexes.ts so unpaired rows can share null.
+  deviceId       String?   @unique
+  device         Device?   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@map("spinco_connect_pairings")
+}
+
+model RateLimit {
+  key         String   @id @map("_id")
+  count       Int      @default(0)
+  windowStart DateTime
+  updatedAt   DateTime @updatedAt
+
+  @@map("spinco_connect_rate_limits")
+}
