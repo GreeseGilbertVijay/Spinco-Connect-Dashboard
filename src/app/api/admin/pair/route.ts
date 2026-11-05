@@ -10,6 +10,8 @@ import { isPairingExpired } from "@/lib/device-rules";
 const pairSchema = z.object({
   code: z.string().regex(/^\d{8}$/),
   name: z.string().trim().min(1).max(60),
+  // Set when reconnecting a revoked TV, so it keeps its registration and assigned content.
+  deviceId: z.string().min(1).optional(),
 });
 
 export async function POST(request: Request) {
@@ -28,13 +30,33 @@ export async function POST(request: Request) {
       const pairing = await transaction.pairing.findUnique({ where: { codeHash } });
       if (!pairing || isPairingExpired(pairing.expiresAt)) throw new Error("PAIRING_EXPIRED");
       if (pairing.pairedAt) throw new Error("PAIRING_USED");
-      const registered = await transaction.device.create({
-        data: {
-          name: parsed.data.name,
-          tokenHash: deviceTokenHash(token),
-        },
-        select: { id: true, deviceId: true, name: true },
-      });
+      const tokenHash = deviceTokenHash(token);
+      const select = { id: true, deviceId: true, name: true };
+      let registered;
+      if (parsed.data.deviceId) {
+        const existing = await transaction.device.findUnique({ where: { id: parsed.data.deviceId }, select: { revokedAt: true } });
+        if (!existing) throw new Error("DEVICE_NOT_FOUND");
+        if (!existing.revokedAt) throw new Error("DEVICE_NOT_REVOKED");
+        // Pairing.deviceId is unique, so the old pairing has to go before the new one can attach.
+        await transaction.pairing.deleteMany({ where: { deviceId: parsed.data.deviceId } });
+        registered = await transaction.device.update({
+          where: { id: parsed.data.deviceId },
+          data: {
+            name: parsed.data.name,
+            tokenHash,
+            revokedAt: null,
+            lastSeenAt: null,
+            lastDisplayedImageId: null,
+            lastDisplayedImageName: null,
+            lastDisplayedAt: null,
+            lastError: null,
+            lastErrorAt: null,
+          },
+          select,
+        });
+      } else {
+        registered = await transaction.device.create({ data: { name: parsed.data.name, tokenHash }, select });
+      }
       await transaction.pairing.update({
         where: { id: pairing.id },
         data: {
@@ -52,6 +74,12 @@ export async function POST(request: Request) {
     }
     if (error instanceof Error && error.message === "PAIRING_USED") {
       return errorResponse("That pairing code has already been used.", 409);
+    }
+    if (error instanceof Error && error.message === "DEVICE_NOT_FOUND") {
+      return errorResponse("That TV no longer exists. Pair it as a new TV.", 404);
+    }
+    if (error instanceof Error && error.message === "DEVICE_NOT_REVOKED") {
+      return errorResponse("That TV is already connected.", 409);
     }
     throw error;
   }

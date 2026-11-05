@@ -1,24 +1,39 @@
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
 import { assertSameOrigin, errorResponse } from "@/lib/http";
-import { notRevoked } from "@/lib/device-rules";
+import { MAX_SLIDE_SECONDS, MAX_SLIDES, MIN_SLIDE_SECONDS, notRevoked } from "@/lib/device-rules";
 import { prisma } from "@/lib/prisma";
 
-const assignmentSchema = z.object({ imageId: z.string().min(1).nullable() });
+const assignmentSchema = z.object({
+  imageIds: z.array(z.string().min(1)).max(MAX_SLIDES).refine((ids) => new Set(ids).size === ids.length),
+  slideIntervalSeconds: z.number().int().min(MIN_SLIDE_SECONDS).max(MAX_SLIDE_SECONDS).optional(),
+});
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function PUT(request: Request, context: RouteContext) {
   if (!assertSameOrigin(request)) return errorResponse("Invalid request origin.", 403);
   if (!(await requireAdmin())) return errorResponse("Sign in required.", 401);
   const parsed = assignmentSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return errorResponse("Select an image or choose no assignment.", 400);
+  if (!parsed.success) {
+    return errorResponse(`Choose up to ${MAX_SLIDES} files, each once, and ${MIN_SLIDE_SECONDS}-${MAX_SLIDE_SECONDS} seconds per slide.`, 400);
+  }
+  const { imageIds, slideIntervalSeconds } = parsed.data;
   const { id } = await context.params;
-  if (parsed.data.imageId && !(await prisma.image.findUnique({ where: { id: parsed.data.imageId }, select: { id: true } }))) {
-    return errorResponse("The selected file does not exist.", 404);
+  const files = await prisma.image.findMany({ where: { id: { in: imageIds } }, select: { mimeType: true } });
+  if (files.length !== imageIds.length) return errorResponse("A selected file does not exist.", 404);
+  if (imageIds.length > 1 && files.some((file) => !file.mimeType.startsWith("image/"))) {
+    return errorResponse("A slideshow can only contain images.", 400);
   }
   const updated = await prisma.device.updateMany({
     where: { id, ...notRevoked },
-    data: { assignedImageId: parsed.data.imageId, assignmentVersion: { increment: 1 }, lastError: null, lastErrorAt: null },
+    data: {
+      assignedImageId: imageIds[0] ?? null,
+      slideImageIds: imageIds,
+      ...(slideIntervalSeconds === undefined ? {} : { slideIntervalSeconds }),
+      assignmentVersion: { increment: 1 },
+      lastError: null,
+      lastErrorAt: null,
+    },
   });
   if (!updated.count) return errorResponse("TV not found or access has been revoked.", 404);
   return Response.json({ ok: true });

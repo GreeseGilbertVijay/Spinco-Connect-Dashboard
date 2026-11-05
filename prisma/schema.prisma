@@ -29,6 +29,11 @@ model Device {
   appState               String    @default("unknown")
   assignedImageId        String?
   assignedImage          Image?    @relation("DeviceAssignment", fields: [assignedImageId], references: [id], onDelete: SetNull)
+  // Ordered slideshow. assignedImageId always mirrors the first entry; devices assigned
+  // before slideshows existed have this unset, so read it through playlistIds().
+  slideImageIds          String[]
+  // Optional because existing documents do not have it: a required field would fail to load.
+  slideIntervalSeconds   Int?
   assignmentVersion      Int       @default(0)
   fit                    String    @default("contain")
   lastDisplayedImageId   String?

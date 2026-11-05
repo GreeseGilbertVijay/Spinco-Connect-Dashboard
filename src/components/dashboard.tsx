@@ -14,6 +14,8 @@ type DeviceItem = {
   lastSeenAt: string | null;
   appState: string;
   fit: "contain" | "cover";
+  slideImageIds: string[];
+  slideIntervalSeconds: number;
   assignedImage: { id: string; name: string; mimeType: string; url: string } | null;
   lastDisplayedImageId: string | null;
   lastDisplayed: { name: string; at: string } | null;
@@ -23,6 +25,9 @@ type DeviceItem = {
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 200 * 1024 * 1024;
+const MAX_SLIDES = 20;
+const MIN_SLIDE_SECONDS = 3;
+const MAX_SLIDE_SECONDS = 900;
 
 function MediaPreview({ item, alt }: { item: { mimeType: string; url: string }; alt: string }) {
   return item.mimeType.startsWith("video/")
@@ -32,10 +37,11 @@ function MediaPreview({ item, alt }: { item: { mimeType: string; url: string }; 
 
 function deviceStatus(device: DeviceItem, actionError?: string) {
   if (actionError) return { tone: "error", text: actionError };
+  if (device.revokedAt) return { tone: "error", text: "Access revoked. The TV has cleared its content and shows a code to reconnect." };
   if (device.lastError) return { tone: "error", text: `TV error${device.lastErrorAt ? ` (${ago(device.lastErrorAt)})` : ""}: ${device.lastError}` };
-  if (!device.assignedImage || device.lastDisplayedImageId === device.assignedImage.id) return null;
+  if (!device.assignedImage || (device.lastDisplayedImageId && device.slideImageIds.includes(device.lastDisplayedImageId))) return null;
   return device.online
-    ? { tone: "pending", text: `Sending ${device.assignedImage.name} to the TV...` }
+    ? { tone: "pending", text: `Sending ${device.slideImageIds.length > 1 ? "the slideshow" : device.assignedImage.name} to the TV...` }
     : { tone: "error", text: "This TV is offline. The content will appear when it reconnects." };
 }
 
@@ -70,6 +76,10 @@ export default function Dashboard({ email }: { email: string }) {
   const [modal, setModal] = useState(false);
   const [pairCode, setPairCode] = useState("");
   const [deviceName, setDeviceName] = useState("");
+  const [reconnecting, setReconnecting] = useState<DeviceItem | null>(null);
+  const [slideshowDevice, setSlideshowDevice] = useState<DeviceItem | null>(null);
+  const [slideIds, setSlideIds] = useState<string[]>([]);
+  const [slideSeconds, setSlideSeconds] = useState(10);
 
   const refresh = useCallback(async () => {
     try {
@@ -124,12 +134,43 @@ export default function Dashboard({ email }: { email: string }) {
       await request("/api/admin/pair", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: pairCode, name: deviceName }),
+        body: JSON.stringify({ code: pairCode, name: deviceName, deviceId: reconnecting?.id }),
       });
-      setModal(false);
-      setPairCode("");
-      setDeviceName("");
-    }, "TV registered. It will connect automatically.");
+      closePairing();
+    }, reconnecting ? "TV reconnected. Its content will return automatically." : "TV registered. It will connect automatically.");
+  }
+
+  function closePairing() {
+    setModal(false);
+    setReconnecting(null);
+    setPairCode("");
+    setDeviceName("");
+  }
+
+  function openReconnect(device: DeviceItem) {
+    setError("");
+    setReconnecting(device);
+    setDeviceName(device.name);
+    setModal(true);
+  }
+
+  function openSlideshow(device: DeviceItem) {
+    setError("");
+    setSlideshowDevice(device);
+    setSlideIds(device.slideImageIds.filter((id) => images.some((image) => image.id === id && image.mimeType.startsWith("image/"))));
+    setSlideSeconds(device.slideIntervalSeconds);
+  }
+
+  async function saveSlideshow(event: ChangeEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const device = slideshowDevice;
+    if (!device) return;
+    setSlideshowDevice(null);
+    await action(
+      () => request(`/api/admin/devices/${device.id}/assignment`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ imageIds: slideIds, slideIntervalSeconds: slideSeconds }) }),
+      "Slideshow updated.",
+      device.id,
+    );
   }
 
   async function uploadMedia(event: ChangeEvent<HTMLInputElement>) {
@@ -183,7 +224,7 @@ export default function Dashboard({ email }: { email: string }) {
         <div className="content">
           <div className="page-heading">
             <div><div className="eyebrow">SIGNAGE MANAGEMENT</div><h1>Good to see you</h1><p className="subheading">Manage connected players and the content shown on each screen.</p></div>
-            <button className="button primary" onClick={() => { setError(""); setModal(true); }}>＋&nbsp; Pair a TV</button>
+            <button className="button primary" onClick={() => { setError(""); setReconnecting(null); setModal(true); }}>＋&nbsp; Pair a TV</button>
           </div>
           {error && <div className="notice error" role="alert">{error}</div>}
           {notice && <div className="notice" role="status">{notice}</div>}
@@ -204,37 +245,41 @@ export default function Dashboard({ email }: { email: string }) {
                 <article className="device-card" key={device.id}>
                   <div className="device-top">
                     <div><div className="device-name"><span className={`status ${device.online ? "online" : ""}`}>{device.online ? "Online" : "Offline"}</span><h3>{device.name}</h3></div><div className="device-id">ID&nbsp; {device.deviceId}</div></div>
-                    <button className="button quiet" disabled={busy} onClick={() => {
+                    <button className="button quiet" disabled={busy || !!device.revokedAt} onClick={() => {
                       const name = window.prompt("Enter a new TV name", device.name);
                       if (name?.trim()) void action(() => request(`/api/admin/devices/${device.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) }), "TV name updated.", device.id);
                     }}>Rename</button>
                   </div>
-                  <div className="preview-wrap">{device.assignedImage ? <MediaPreview item={device.assignedImage} alt={`Assigned to ${device.name}`} /> : <span className="preview-empty">Nothing assigned</span>}</div>
+                  <div className="preview-wrap">
+                    {device.revokedAt ? <span className="preview-empty">Access revoked · nothing is showing on this TV</span> : device.assignedImage ? <MediaPreview item={device.assignedImage} alt={`Assigned to ${device.name}`} /> : <span className="preview-empty">Nothing assigned</span>}
+                    {!device.revokedAt && device.slideImageIds.length > 1 && <span className="preview-badge">Slideshow · {device.slideImageIds.length} images · {device.slideIntervalSeconds}s each</span>}
+                  </div>
                   <div className="device-info">
                     <div>Last seen<strong>{ago(device.lastSeenAt)}{device.appState === "background" && device.online ? " · app background" : ""}</strong></div>
                     <div>Last displayed<strong>{device.lastDisplayed?.name ?? "Not acknowledged yet"}</strong></div>
                   </div>
                   <div className="device-controls">
-                    <select className="select image-select" aria-label={`Assign content to ${device.name}`} disabled={!!device.revokedAt || busy} value={device.assignedImage?.id ?? ""} onChange={(event) => void action(
-                      () => request(`/api/admin/devices/${device.id}/assignment`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ imageId: event.target.value || null }) }),
+                    <select className="select image-select" aria-label={`Assign content to ${device.name}`} disabled={!!device.revokedAt || busy} value={device.slideImageIds.length > 1 ? "slideshow" : device.assignedImage?.id ?? ""} onChange={(event) => void action(
+                      () => request(`/api/admin/devices/${device.id}/assignment`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ imageIds: event.target.value ? [event.target.value] : [] }) }),
                       "Assignment updated.",
                       device.id,
                     )}>
-                      <option value="">Nothing assigned</option>{images.map((image) => <option key={image.id} value={image.id}>{image.name}</option>)}
+                      <option value="">Nothing assigned</option>{device.slideImageIds.length > 1 && <option value="slideshow" disabled>Slideshow ({device.slideImageIds.length} images)</option>}{images.map((image) => <option key={image.id} value={image.id}>{image.name}</option>)}
                     </select>
                     <select className="select" aria-label={`Content fit for ${device.name}`} disabled={!!device.revokedAt || busy} value={device.fit} onChange={(event) => void action(
                       () => request(`/api/admin/devices/${device.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fit: event.target.value }) }),
                       "Fit updated.",
                       device.id,
                     )}><option value="contain">Contain</option><option value="cover">Cover</option></select>
-                    {device.revokedAt ? <span className="section-meta">Access revoked</span> : <>
-                      <button className="button quiet danger" disabled={busy} onClick={() => {
+                    <button className="button quiet" disabled={!!device.revokedAt || busy || images.filter((image) => image.mimeType.startsWith("image/")).length < 2} title="Rotate several images on this TV" onClick={() => openSlideshow(device)}>Slideshow</button>
+                    {device.revokedAt
+                      ? <button className="button primary" disabled={busy} onClick={() => openReconnect(device)}>Reconnect</button>
+                      : <button className="button quiet danger" disabled={busy} onClick={() => {
                         if (window.confirm(`Revoke access for ${device.name}? The player will need to be paired again.`)) void action(() => request(`/api/admin/devices/${device.id}/revoke`, { method: "POST" }), "Device access revoked.", device.id);
-                      }}>Revoke</button>
-                      <button className="button quiet danger" disabled={busy} onClick={() => {
-                        if (window.confirm(`Delete ${device.name}? This removes its registration.`)) void action(() => request(`/api/admin/devices/${device.id}`, { method: "DELETE" }), "TV deleted.", device.id);
-                      }}>Delete</button>
-                    </>}
+                      }}>Revoke</button>}
+                    <button className="button quiet danger" disabled={busy} onClick={() => {
+                      if (window.confirm(`Delete ${device.name}? This removes its registration.`)) void action(() => request(`/api/admin/devices/${device.id}`, { method: "DELETE" }), "TV deleted.", device.id);
+                    }}>Delete</button>
                   </div>
                   {status && <div className={`device-status ${status.tone}`} role={status.tone === "error" ? "alert" : "status"}>{status.text}</div>}
                 </article>
@@ -261,12 +306,30 @@ export default function Dashboard({ email }: { email: string }) {
           <p className="section-meta" style={{ marginTop: 32 }}>Online means the player app sent a heartbeat within 45 seconds. It does not confirm the connected television is powered on.</p>
         </div>
       </main>
-      {modal && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setModal(false); }}>
+      {modal && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closePairing(); }}>
         <form className="modal" onSubmit={(event) => void pairDevice(event)}>
-          <h2>Pair a TV</h2><p>Open Spinco Connect on the TV. Enter the temporary 8-digit code shown on its screen and give the player a recognizable name.</p>
+          <h2>{reconnecting ? `Reconnect ${reconnecting.name}` : "Pair a TV"}</h2><p>{reconnecting ? "Enter the 8-digit code now showing on this TV. It keeps its assigned content and settings." : "Open Spinco Connect on the TV. Enter the temporary 8-digit code shown on its screen and give the player a recognizable name."}</p>
           <label className="field">Pairing code<input inputMode="numeric" autoComplete="off" maxLength={8} required pattern="[0-9]{8}" placeholder="00000000" value={pairCode} onChange={(event) => setPairCode(event.target.value.replace(/\D/g, "").slice(0, 8))} /></label>
           <label className="field">TV name<input required maxLength={60} placeholder="Reception display" value={deviceName} onChange={(event) => setDeviceName(event.target.value)} /></label>
-          <div className="modal-actions"><button type="button" className="button" onClick={() => setModal(false)}>Cancel</button><button type="submit" className="button primary" disabled={busy || pairCode.length !== 8 || !deviceName.trim()}>{busy ? "Registering..." : "Register TV"}</button></div>
+          <div className="modal-actions"><button type="button" className="button" onClick={closePairing}>Cancel</button><button type="submit" className="button primary" disabled={busy || pairCode.length !== 8 || !deviceName.trim()}>{busy ? "Connecting..." : reconnecting ? "Reconnect TV" : "Register TV"}</button></div>
+        </form>
+      </div>}
+      {slideshowDevice && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSlideshowDevice(null); }}>
+        <form className="modal wide" onSubmit={(event) => void saveSlideshow(event)}>
+          <h2>Slideshow for {slideshowDevice.name}</h2><p>Tick at least two images. They play in the order you tick them, then repeat.</p>
+          <div className="slide-picker">{images.filter((image) => image.mimeType.startsWith("image/")).map((image) => {
+            const position = slideIds.indexOf(image.id);
+            return (
+              <label className={`slide-option ${position >= 0 ? "selected" : ""}`} key={image.id} title={image.name}>
+                <input type="checkbox" checked={position >= 0} disabled={position < 0 && slideIds.length >= MAX_SLIDES} onChange={() => setSlideIds((previous) => previous.includes(image.id) ? previous.filter((id) => id !== image.id) : [...previous, image.id])} />
+                <Image src={image.url} alt="" width={160} height={90} unoptimized />
+                <span className="slide-name">{image.name}</span>
+                {position >= 0 && <span className="slide-order">{position + 1}</span>}
+              </label>
+            );
+          })}</div>
+          <label className="field">Seconds per image<input type="number" required min={MIN_SLIDE_SECONDS} max={MAX_SLIDE_SECONDS} step={1} value={slideSeconds} onChange={(event) => setSlideSeconds(Number(event.target.value))} /></label>
+          <div className="modal-actions"><button type="button" className="button" onClick={() => setSlideshowDevice(null)}>Cancel</button><button type="submit" className="button primary" disabled={busy || slideIds.length < 2}>Save slideshow</button></div>
         </form>
       </div>}
     </div>

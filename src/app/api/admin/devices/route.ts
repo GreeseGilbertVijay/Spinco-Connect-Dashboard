@@ -1,7 +1,7 @@
 import { requireAdmin } from "@/lib/auth";
 import { errorResponse } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
-import { isPlayerOnline } from "@/lib/device-rules";
+import { DEFAULT_SLIDE_SECONDS, isPlayerOnline, playlistIds } from "@/lib/device-rules";
 
 export async function GET() {
   if (!(await requireAdmin())) return errorResponse("Sign in required.", 401);
@@ -21,6 +21,8 @@ export async function GET() {
       appState: device.appState,
       fit: device.fit,
       assignmentVersion: device.assignmentVersion,
+      slideImageIds: playlistIds(device),
+      slideIntervalSeconds: device.slideIntervalSeconds ?? DEFAULT_SLIDE_SECONDS,
       assignedImage: device.assignedImage
         ? { id: device.assignedImage.id, name: device.assignedImage.originalName, mimeType: device.assignedImage.mimeType, url: `/api/admin/images/${device.assignedImage.id}/file` }
         : null,

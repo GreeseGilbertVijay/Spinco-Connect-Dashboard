@@ -1,5 +1,6 @@
 import { requireAdmin } from "@/lib/auth";
 import { assertSameOrigin, errorResponse } from "@/lib/http";
+import { playlistIds } from "@/lib/device-rules";
 import { prisma } from "@/lib/prisma";
 import { deleteStoredImage } from "@/lib/storage";
 
@@ -11,13 +12,20 @@ export async function DELETE(request: Request, context: RouteContext) {
   const { id } = await context.params;
   const image = await prisma.image.findUnique({ where: { id } });
   if (!image) return errorResponse("Image not found.", 404);
-  await prisma.$transaction([
-    prisma.device.updateMany({
-      where: { assignedImageId: id },
-      data: { assignedImageId: null, assignmentVersion: { increment: 1 } },
-    }),
-    prisma.image.delete({ where: { id } }),
-  ]);
+  await prisma.$transaction(async (transaction) => {
+    const devices = await transaction.device.findMany({
+      where: { OR: [{ assignedImageId: id }, { slideImageIds: { has: id } }] },
+      select: { id: true, assignedImageId: true, slideImageIds: true },
+    });
+    for (const device of devices) {
+      const remaining = playlistIds(device).filter((imageId) => imageId !== id);
+      await transaction.device.update({
+        where: { id: device.id },
+        data: { assignedImageId: remaining[0] ?? null, slideImageIds: remaining, assignmentVersion: { increment: 1 } },
+      });
+    }
+    await transaction.image.delete({ where: { id } });
+  });
   await deleteStoredImage(image.storageKey);
   return Response.json({ ok: true });
 }

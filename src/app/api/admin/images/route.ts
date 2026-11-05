@@ -1,5 +1,6 @@
 import { requireAdmin } from "@/lib/auth";
 import { assertSameOrigin, errorResponse } from "@/lib/http";
+import { playlistIds } from "@/lib/device-rules";
 import { prisma } from "@/lib/prisma";
 import {
   deleteStoredImage,
@@ -14,10 +15,12 @@ import {
 
 export async function GET() {
   if (!(await requireAdmin())) return errorResponse("Sign in required.", 401);
-  const images = await prisma.image.findMany({
-    orderBy: { createdAt: "desc" },
-    include: { _count: { select: { assignedTo: true } } },
-  });
+  const [images, devices] = await Promise.all([
+    prisma.image.findMany({ orderBy: { createdAt: "desc" } }),
+    prisma.device.findMany({ select: { assignedImageId: true, slideImageIds: true } }),
+  ]);
+  const assignedCounts = new Map<string, number>();
+  for (const id of devices.flatMap(playlistIds)) assignedCounts.set(id, (assignedCounts.get(id) ?? 0) + 1);
   return Response.json(
     images.map((image) => ({
       id: image.id,
@@ -25,7 +28,7 @@ export async function GET() {
       mimeType: image.mimeType,
       size: image.size,
       createdAt: image.createdAt,
-      assignedCount: image._count.assignedTo,
+      assignedCount: assignedCounts.get(image.id) ?? 0,
       url: `/api/admin/images/${image.id}/file`,
     })),
     { headers: { "Cache-Control": "no-store" } },

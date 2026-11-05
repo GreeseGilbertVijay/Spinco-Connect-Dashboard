@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canReadAssignedImage, isPairingExpired, isPlayerOnline, notRevoked } from "./device-rules";
+import { canReadAssignedImage, isPairingExpired, isPlayerOnline, notRevoked, playlistIds } from "./device-rules";
 
 const now = new Date("2026-10-30T00:00:00.000Z");
 
@@ -27,6 +27,26 @@ describe("device image isolation", () => {
     expect(canReadAssignedImage(active, "image-b", 3)).toBe(false);
     expect(canReadAssignedImage(active, "image-a", 2)).toBe(false);
     expect(canReadAssignedImage({ ...active, revokedAt: now }, "image-a", 3)).toBe(false);
+  });
+
+  it("permits every slide of the current slideshow and nothing else", () => {
+    const slideshow = { ...active, slideImageIds: ["image-a", "image-b"] };
+    expect(canReadAssignedImage(slideshow, "image-b", 3)).toBe(true);
+    expect(canReadAssignedImage(slideshow, "image-c", 3)).toBe(false);
+    expect(canReadAssignedImage(slideshow, "image-b", 2)).toBe(false);
+    expect(canReadAssignedImage({ ...slideshow, revokedAt: now }, "image-b", 3)).toBe(false);
+  });
+});
+
+describe("playlist", () => {
+  it("falls back to the single assignment for devices without slides", () => {
+    expect(playlistIds({ assignedImageId: "image-a", slideImageIds: [] })).toEqual(["image-a"]);
+    expect(playlistIds({ assignedImageId: "image-a" })).toEqual(["image-a"]);
+    expect(playlistIds({ assignedImageId: null, slideImageIds: [] })).toEqual([]);
+  });
+
+  it("keeps the slide order", () => {
+    expect(playlistIds({ assignedImageId: "image-b", slideImageIds: ["image-b", "image-a"] })).toEqual(["image-b", "image-a"]);
   });
 });
 
