@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -34,7 +35,7 @@ export default function LoginForm() {
   return (
     <main className="login-screen">
       <form className="login-box" onSubmit={submit}>
-        <div className="brand"><span className="brand-mark">S</span><span className="brand-text">SPINCO CONNECT</span></div>
+        <div className="brand"><Image className="brand-mark" src="/logo.png" alt="Spinco logo" width={40} height={40} loading="eager" /><span className="brand-text">SPINCO CONNECT</span></div>
         <h1>Welcome back</h1>
         <p className="subheading">Sign in to manage your signage players and screen content.</p>
         <label className="field">Email address<input autoComplete="username" type="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>

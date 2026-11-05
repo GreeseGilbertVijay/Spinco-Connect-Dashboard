@@ -1,6 +1,6 @@
 import { requireAdmin } from "@/lib/auth";
 import { assertSameOrigin, errorResponse } from "@/lib/http";
-import { playlistIds } from "@/lib/device-rules";
+import { isSuperAdmin, playlistIds } from "@/lib/device-rules";
 import { prisma } from "@/lib/prisma";
 import { deleteStoredImage } from "@/lib/storage";
 
@@ -8,10 +8,15 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 export async function DELETE(request: Request, context: RouteContext) {
   if (!assertSameOrigin(request)) return errorResponse("Invalid request origin.", 403);
-  if (!(await requireAdmin())) return errorResponse("Sign in required.", 401);
+  const admin = await requireAdmin();
+  if (!admin) return errorResponse("Sign in required.", 401);
   const { id } = await context.params;
   const image = await prisma.image.findUnique({ where: { id } });
   if (!image) return errorResponse("Image not found.", 404);
+  // The library is shared, so a regular account must not pull a file off someone else's TV.
+  if (!isSuperAdmin(admin) && await prisma.device.count({ where: { OR: [{ assignedImageId: id }, { slideImageIds: { has: id } }] } })) {
+    return errorResponse("This file is in use on a TV.", 409);
+  }
   await prisma.$transaction(async (transaction) => {
     const devices = await transaction.device.findMany({
       where: { OR: [{ assignedImageId: id }, { slideImageIds: { has: id } }] },

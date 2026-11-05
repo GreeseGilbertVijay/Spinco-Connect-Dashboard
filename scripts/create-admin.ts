@@ -1,4 +1,5 @@
 import { hash } from "bcryptjs";
+import { SUPER_ADMIN_ROLE } from "../src/lib/device-rules";
 import { prisma } from "../src/lib/prisma";
 
 async function main() {
@@ -15,7 +16,7 @@ async function main() {
   }
   const existing = await prisma.admin.findUnique({ where: { email } });
   if (existing) throw new Error(`An admin account already exists for ${email}; refusing to replace its password.`);
-  await prisma.admin.create({ data: { email, passwordHash: await hash(password, 12) } });
+  await prisma.admin.create({ data: { email, role: SUPER_ADMIN_ROLE, passwordHash: await hash(password, 12) } });
   console.log(`Created admin account: ${email}`);
 }
 

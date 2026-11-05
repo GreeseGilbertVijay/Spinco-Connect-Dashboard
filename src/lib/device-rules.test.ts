@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canReadAssignedImage, isPairingExpired, isPlayerOnline, notRevoked, playlistIds } from "./device-rules";
+import { adminName, canReadAssignedImage, deviceScope, isPairingExpired, isPlayerOnline, isSuperAdmin, notRevoked, playlistIds } from "./device-rules";
 
 const now = new Date("2026-10-30T00:00:00.000Z");
 
@@ -47,6 +47,26 @@ describe("playlist", () => {
 
   it("keeps the slide order", () => {
     expect(playlistIds({ assignedImageId: "image-b", slideImageIds: ["image-b", "image-a"] })).toEqual(["image-b", "image-a"]);
+  });
+});
+
+describe("account roles", () => {
+  it("only treats the exact role as super admin", () => {
+    expect(isSuperAdmin({ role: "super_admin" })).toBe(true);
+    expect(isSuperAdmin({ role: "user" })).toBe(false);
+    expect(isSuperAdmin({ role: null })).toBe(false);
+    expect(isSuperAdmin({})).toBe(false);
+  });
+
+  it("limits regular accounts to their own TVs", () => {
+    expect(deviceScope({ id: "user-a", role: "user" })).toEqual({ ownerId: "user-a" });
+    expect(deviceScope({ id: "user-a" })).toEqual({ ownerId: "user-a" });
+    expect(deviceScope({ id: "boss", role: "super_admin" })).toEqual({});
+  });
+
+  it("falls back to the email name", () => {
+    expect(adminName({ name: "Asha", email: "a@x.com" })).toBe("Asha");
+    expect(adminName({ name: null, email: "asha.k@x.com" })).toBe("asha.k");
   });
 });
 

@@ -1,11 +1,7 @@
-import { redirect } from "next/navigation";
-import { getAdmin } from "@/lib/auth";
-import Dashboard from "@/components/dashboard";
+import DashboardPage from "@/components/dashboard-page";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
-  const admin = await getAdmin();
-  if (!admin) redirect("/login");
-  return <Dashboard email={admin.email} />;
+export default function Home() {
+  return <DashboardPage view="overview" />;
 }

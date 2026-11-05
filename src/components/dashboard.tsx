@@ -2,6 +2,7 @@
 
 import { ChangeEvent, useCallback, useEffect, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 type ImageItem = { id: string; name: string; mimeType: string; size: number; createdAt: string; assignedCount: number; url: string };
@@ -9,6 +10,9 @@ type DeviceItem = {
   id: string;
   deviceId: string;
   name: string;
+  ownerName: string | null;
+  mirrorOfId: string | null;
+  mirrorOfName: string | null;
   online: boolean;
   revokedAt: string | null;
   lastSeenAt: string | null;
@@ -72,7 +76,15 @@ function formatSize(bytes: number) {
 
 type ConfirmDialog = { title: string; message: string; confirmLabel: string; danger?: boolean; run: () => void };
 
-export default function Dashboard({ email }: { email: string }) {
+export type DashboardView = "overview" | "players" | "media";
+
+const VIEW_TEXT: Record<DashboardView, { caption: string; eyebrow: string; title: string; subheading: string }> = {
+  overview: { caption: "Overview", eyebrow: "SIGNAGE MANAGEMENT", title: "Good to see you", subheading: "A summary of your connected players and media." },
+  players: { caption: "Players", eyebrow: "SCREENS", title: "Players", subheading: "Manage connected players and the content shown on each screen." },
+  media: { caption: "Media library", eyebrow: "CONTENT", title: "Media library", subheading: "Upload the images and videos your screens can show." },
+};
+
+export default function Dashboard({ email, userId, superAdmin, view }: { email: string; userId: string; superAdmin: boolean; view: DashboardView }) {
   const router = useRouter();
   const [devices, setDevices] = useState<DeviceItem[]>([]);
   const [images, setImages] = useState<ImageItem[]>([]);
@@ -89,6 +101,8 @@ export default function Dashboard({ email }: { email: string }) {
   const [slideIds, setSlideIds] = useState<string[]>([]);
   const [slideSeconds, setSlideSeconds] = useState(10);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog | null>(null);
+  const [mirrorDevice, setMirrorDevice] = useState<DeviceItem | null>(null);
+  const [mirrorIds, setMirrorIds] = useState<string[]>([]);
   const [renaming, setRenaming] = useState<DeviceItem | null>(null);
   const [newName, setNewName] = useState("");
   const [serverOffline, setServerOffline] = useState(false);
@@ -167,6 +181,23 @@ export default function Dashboard({ email }: { email: string }) {
     const connected = await refresh();
     setServerRetrying(false);
     setServerRetryFailed(!connected);
+  }
+
+  // A TV that others follow cannot follow in turn, which keeps connections one level deep.
+  function mirrorChoices(source: DeviceItem) {
+    return devices.filter((device) => device.id !== source.id && !device.revokedAt && !devices.some((other) => other.mirrorOfId === device.id));
+  }
+
+  async function saveMirrors(event: ChangeEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const device = mirrorDevice;
+    if (!device) return;
+    setMirrorDevice(null);
+    await action(
+      () => request(`/api/admin/devices/${device.id}/mirrors`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetIds: mirrorIds }) }),
+      "Connected TVs updated.",
+      device.id,
+    );
   }
 
   async function saveName(event: ChangeEvent<HTMLFormElement>) {
@@ -250,32 +281,34 @@ export default function Dashboard({ email }: { email: string }) {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand"><span className="brand-mark">S</span><span className="brand-text">SPINCO CONNECT</span></div>
+        <div className="brand"><Image className="brand-mark" src="/logo.png" alt="Spinco logo" width={40} height={40} loading="eager" /><span className="brand-text">SPINCO CONNECT</span></div>
         <div className="side-label">Workspace</div>
-        <button className="nav-item active"><span className="nav-icon">▦</span><span>Overview</span></button>
-        <button className="nav-item" onClick={() => document.getElementById("player-list")?.scrollIntoView({ behavior: "smooth" })}><span className="nav-icon">▣</span><span>Players</span></button>
-        <button className="nav-item" onClick={() => document.getElementById("library")?.scrollIntoView({ behavior: "smooth" })}><span className="nav-icon">▧</span><span>Media library</span></button>
+        <Link className={`nav-item ${view === "overview" ? "active" : ""}`} href="/"><span className="nav-icon">▦</span><span>Overview</span></Link>
+        <Link className={`nav-item ${view === "players" ? "active" : ""}`} href="/players"><span className="nav-icon">▣</span><span>Players</span></Link>
+        <Link className={`nav-item ${view === "media" ? "active" : ""}`} href="/media"><span className="nav-icon">▧</span><span>Media library</span></Link>
+        <Link className="nav-item" href={superAdmin ? "/users" : `/users/${userId}`}><span className="nav-icon">▤</span><span>{superAdmin ? "Users" : "My TVs"}</span></Link>
         <div className="side-foot">Player connectivity is not a physical TV power indicator.<br />Spinco Connect · Local deployment</div>
       </aside>
       <main className="main-area">
         <header className="topbar">
-          <div className="topbar-caption">Workspace&nbsp; / &nbsp;<strong>Overview</strong></div>
+          <div className="topbar-caption">Workspace&nbsp; / &nbsp;<strong>{VIEW_TEXT[view].caption}</strong></div>
           <div className="account"><span>{email}</span><button className="button quiet" onClick={() => void logout()} disabled={busy}>Sign out</button><span className="avatar">{email.charAt(0).toUpperCase()}</span>{serverOffline && <button className="server-dot" aria-label="Server offline. Open reconnect options" title="Server offline" onClick={() => { setServerRetryFailed(false); setServerPopup(true); }} />}</div>
         </header>
         <div className="content">
           <div className="page-heading">
-            <div><div className="eyebrow">SIGNAGE MANAGEMENT</div><h1>Good to see you</h1><p className="subheading">Manage connected players and the content shown on each screen.</p></div>
-            <button className="button primary" onClick={() => { setError(""); setReconnecting(null); setModal(true); }}>＋&nbsp; Pair a TV</button>
+            <div><div className="eyebrow">{VIEW_TEXT[view].eyebrow}</div><h1>{VIEW_TEXT[view].title}</h1><p className="subheading">{VIEW_TEXT[view].subheading}</p></div>
+            {view !== "media" && <button className="button primary" onClick={() => { setError(""); setReconnecting(null); setModal(true); }}>＋&nbsp; Pair a TV</button>}
           </div>
           {error && <div className="notice error" role="alert">{error}</div>}
           {notice && <div className="notice" role="status">{notice}</div>}
-          <div className="metric-grid">
+          {view === "overview" && <div className="metric-grid">
             <div className="metric"><div className="metric-label">Registered players</div><div className="metric-row"><span className="metric-value">{loading ? "—" : devices.length}</span><span className="metric-note">all registered screens</span></div></div>
             <div className="metric"><div className="metric-label">Player connectivity</div><div className="metric-row"><span className="metric-dot" /><span className="metric-value">{loading ? "—" : devices.filter((device) => device.online).length}</span><span className="metric-note">online now</span></div></div>
             <div className="metric"><div className="metric-label">Media library</div><div className="metric-row"><span className="metric-value">{loading ? "—" : images.length}</span><span className="metric-note">reusable files</span></div></div>
-          </div>
+          </div>}
+          {view === "overview" && <div className="overview-links"><Link className="button" href="/players">Manage players</Link><Link className="button" href="/media">Open media library</Link></div>}
 
-          <section id="player-list">
+          {view === "players" && <section id="player-list">
             <div className="section-head"><h2>Players</h2><span className="section-meta">Connectivity updates every 10 seconds</span></div>
             {loading ? <div className="empty-state"><span className="spinner" /></div> : devices.length === 0 ? (
               <div className="empty-state"><strong>No TVs connected yet</strong>Open the Spinco Connect app on your TV, then pair it using the code on screen.</div>
@@ -291,10 +324,13 @@ export default function Dashboard({ email }: { email: string }) {
                   <div className="preview-wrap">
                     {device.revokedAt ? <span className="preview-empty">Access revoked · nothing is showing on this TV</span> : device.assignedImage ? <MediaPreview item={device.assignedImage} alt={`Assigned to ${device.name}`} /> : <span className="preview-empty">Nothing assigned</span>}
                     {!device.revokedAt && device.slideImageIds.length > 1 && <span className="preview-badge">Slideshow · {device.slideImageIds.length} images · {device.slideIntervalSeconds}s each</span>}
+                    {!device.revokedAt && device.mirrorOfId && <span className="preview-badge link">Same as {device.mirrorOfName ?? "another TV"}</span>}
+                    {!device.revokedAt && devices.some((other) => other.mirrorOfId === device.id) && <span className="preview-badge link">Also on {devices.filter((other) => other.mirrorOfId === device.id).length} more TV(s)</span>}
                   </div>
                   <div className="device-info">
                     <div>Last seen<strong>{ago(device.lastSeenAt)}{device.appState === "background" && device.online ? " · app background" : ""}</strong></div>
                     <div>Last displayed<strong>{device.lastDisplayed?.name ?? "Not acknowledged yet"}</strong></div>
+                    {superAdmin && <div>Paired by<strong>{device.ownerName ?? "Nobody"}</strong></div>}
                   </div>
                   <div className="device-controls">
                     <select className="select image-select" aria-label={`Assign content to ${device.name}`} disabled={!!device.revokedAt || busy} value={device.slideImageIds.length > 1 ? "slideshow" : device.assignedImage?.id ?? ""} onChange={(event) => void action(
@@ -310,6 +346,13 @@ export default function Dashboard({ email }: { email: string }) {
                       device.id,
                     )}><option value="contain">Contain</option><option value="cover">Cover</option></select>
                     <button className="button quiet" disabled={!!device.revokedAt || busy || images.filter((image) => image.mimeType.startsWith("image/")).length < 2} title="Rotate several images on this TV" onClick={() => openSlideshow(device)}>Slideshow</button>
+                    {!device.revokedAt && !device.mirrorOfId && device.assignedImage && <button className="button quiet" disabled={busy || mirrorChoices(device).length === 0} title="Show this content on other connected TVs" onClick={() => { setMirrorIds(devices.filter((other) => other.mirrorOfId === device.id).map((other) => other.id)); setMirrorDevice(device); }}>Show on other TVs</button>}
+                    {!device.revokedAt && device.mirrorOfId && <button className="button quiet" disabled={busy} onClick={() => setConfirmDialog({
+                      title: `Disconnect ${device.name}?`,
+                      message: `It keeps showing its current content, but stops following ${device.mirrorOfName ?? "the other TV"}.`,
+                      confirmLabel: "Disconnect",
+                      run: () => void action(() => request(`/api/admin/devices/${device.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mirrorOfId: null }) }), "TV disconnected.", device.id),
+                    })}>Disconnect</button>}
                     {device.revokedAt
                       ? <button className="button primary" disabled={busy} onClick={() => openReconnect(device)}>Reconnect</button>
                       : <button className="button quiet danger" disabled={busy} onClick={() => setConfirmDialog({
@@ -332,9 +375,9 @@ export default function Dashboard({ email }: { email: string }) {
                 );
               })}</div>
             )}
-          </section>
+          </section>}
 
-          <section className="library" id="library">
+          {view === "media" && <section id="library">
             <div className="section-head"><div><h2>Media library</h2><span className="section-meta">Images: JPEG, PNG, GIF or WebP up to 10 MB · Videos: MP4 or WebM up to 200 MB</span></div><label className="button" htmlFor="media-upload">＋&nbsp; Upload media</label><input id="media-upload" type="file" accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm" hidden disabled={busy} onChange={(event) => void uploadMedia(event)} /></div>
             {loading ? <div className="empty-state"><span className="spinner" /></div> : images.length === 0 ? <div className="empty-state"><strong>Your media library is empty</strong>Upload an image or video to assign it to one or more TVs.</div> : (
               <div className="library-grid">{images.map((image) => (
@@ -352,8 +395,8 @@ export default function Dashboard({ email }: { email: string }) {
                 </article>
               ))}</div>
             )}
-          </section>
-          <p className="section-meta" style={{ marginTop: 32 }}>Online means the player app sent a heartbeat within 45 seconds. It does not confirm the connected television is powered on.</p>
+          </section>}
+          {view === "players" && <p className="section-meta" style={{ marginTop: 32 }}>Online means the player app sent a heartbeat within 45 seconds. It does not confirm the connected television is powered on.</p>}
         </div>
       </main>
       {modal && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closePairing(); }}>
@@ -369,6 +412,19 @@ export default function Dashboard({ email }: { email: string }) {
           <h2 id="confirm-title">{confirmDialog.title}</h2><p>{confirmDialog.message}</p>
           <div className="modal-actions"><button type="button" className="button" autoFocus onClick={() => setConfirmDialog(null)}>Cancel</button><button type="button" className={`button ${confirmDialog.danger ? "danger-solid" : "primary"}`} onClick={() => { confirmDialog.run(); setConfirmDialog(null); }}>{confirmDialog.confirmLabel}</button></div>
         </div>
+      </div>}
+      {mirrorDevice && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setMirrorDevice(null); }}>
+        <form className="modal" onSubmit={(event) => void saveMirrors(event)}>
+          <h2>Show on other TVs</h2><p>Ticked TVs show the same content as {mirrorDevice.name} and follow any change made to it. Untick a TV to disconnect it.</p>
+          <div className="link-list">{mirrorChoices(mirrorDevice).map((device) => (
+            <label className="link-option" key={device.id}>
+              <input type="checkbox" checked={mirrorIds.includes(device.id)} onChange={() => setMirrorIds((previous) => previous.includes(device.id) ? previous.filter((id) => id !== device.id) : [...previous, device.id])} />
+              <span>{device.name}</span>
+              <span className={`status ${device.online ? "online" : ""}`}>{device.online ? "Online" : "Offline"}</span>
+            </label>
+          ))}</div>
+          <div className="modal-actions"><button type="button" className="button" onClick={() => setMirrorDevice(null)}>Cancel</button><button type="submit" className="button primary" disabled={busy}>Save</button></div>
+        </form>
       </div>}
       {renaming && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setRenaming(null); }}>
         <form className="modal" onSubmit={(event) => void saveName(event)}>

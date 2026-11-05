@@ -1,13 +1,15 @@
 import { requireAdmin } from "@/lib/auth";
 import { errorResponse } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_SLIDE_SECONDS, isPlayerOnline, playlistIds } from "@/lib/device-rules";
+import { adminName, DEFAULT_SLIDE_SECONDS, deviceScope, isPlayerOnline, playlistIds } from "@/lib/device-rules";
 
 export async function GET() {
-  if (!(await requireAdmin())) return errorResponse("Sign in required.", 401);
+  const admin = await requireAdmin();
+  if (!admin) return errorResponse("Sign in required.", 401);
   const devices = await prisma.device.findMany({
+    where: deviceScope(admin),
     orderBy: { createdAt: "desc" },
-    include: { assignedImage: true },
+    include: { assignedImage: true, owner: { select: { name: true, email: true } } },
   });
   const now = new Date();
   return Response.json(
@@ -15,6 +17,9 @@ export async function GET() {
       id: device.id,
       deviceId: device.deviceId,
       name: device.name,
+      ownerName: device.owner ? adminName(device.owner) : null,
+      mirrorOfId: device.mirrorOfId ?? null,
+      mirrorOfName: devices.find((source) => source.id === device.mirrorOfId)?.name ?? null,
       revokedAt: device.revokedAt,
       online: !device.revokedAt && isPlayerOnline(device.lastSeenAt, now),
       lastSeenAt: device.lastSeenAt,

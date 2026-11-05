@@ -14,7 +14,11 @@ model Admin {
   id           String   @id @default(cuid()) @map("_id")
   email        String   @unique
   passwordHash String
+  // Both optional because existing documents do not have them. Read through adminName() and isSuperAdmin().
+  name         String?
+  role         String?
   createdAt    DateTime @default(now())
+  devices      Device[] @relation("DeviceOwner")
 
   @@map("spinco_connect_admins")
 }
@@ -23,6 +27,11 @@ model Device {
   id                     String    @id @default(cuid()) @map("_id")
   deviceId               String    @unique @default(uuid())
   name                   String
+  // The TV this one follows. Followers hold their own copy of the content, which the
+  // assignment and fit routes keep in step, so the player and media routes need no changes.
+  mirrorOfId             String?
+  ownerId                String?
+  owner                  Admin?    @relation("DeviceOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   tokenHash              String    @unique
   revokedAt              DateTime?
   lastSeenAt             DateTime?

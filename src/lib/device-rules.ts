@@ -6,6 +6,21 @@ export function isPlayerOnline(lastSeenAt: Date | null, now = new Date()) {
   return lastSeenAt !== null && now.getTime() - lastSeenAt.getTime() < 45_000;
 }
 
+export const SUPER_ADMIN_ROLE = "super_admin";
+
+export function isSuperAdmin(admin: { role?: string | null }) {
+  return admin.role === SUPER_ADMIN_ROLE;
+}
+
+export function adminName(admin: { name?: string | null; email: string }) {
+  return admin.name || admin.email.split("@")[0];
+}
+
+// Spread into every device query made for a signed-in account.
+export function deviceScope(admin: { id: string; role?: string | null }) {
+  return isSuperAdmin(admin) ? {} : { ownerId: admin.id };
+}
+
 export const MAX_SLIDES = 20;
 export const MIN_SLIDE_SECONDS = 3;
 export const MAX_SLIDE_SECONDS = 900;

@@ -5,7 +5,7 @@ import { assertSameOrigin, errorResponse, getClientIp } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { consumeRateLimit } from "@/lib/rate-limit";
 import { deviceTokenHash, encryptDeviceToken, newDeviceToken } from "@/lib/security";
-import { isPairingExpired } from "@/lib/device-rules";
+import { deviceScope, isPairingExpired } from "@/lib/device-rules";
 
 const pairSchema = z.object({
   code: z.string().regex(/^\d{8}$/),
@@ -16,7 +16,8 @@ const pairSchema = z.object({
 
 export async function POST(request: Request) {
   if (!assertSameOrigin(request)) return errorResponse("Invalid request origin.", 403);
-  if (!(await requireAdmin())) return errorResponse("Sign in required.", 401);
+  const admin = await requireAdmin();
+  if (!admin) return errorResponse("Sign in required.", 401);
   if (!(await consumeRateLimit(`admin-pair:${getClientIp(request)}`, 10, 10 * 60_000))) {
     return errorResponse("Too many registration attempts. Try again later.", 429);
   }
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
       const select = { id: true, deviceId: true, name: true };
       let registered;
       if (parsed.data.deviceId) {
-        const existing = await transaction.device.findUnique({ where: { id: parsed.data.deviceId }, select: { revokedAt: true } });
+        const existing = await transaction.device.findFirst({ where: { id: parsed.data.deviceId, ...deviceScope(admin) }, select: { revokedAt: true } });
         if (!existing) throw new Error("DEVICE_NOT_FOUND");
         if (!existing.revokedAt) throw new Error("DEVICE_NOT_REVOKED");
         // Pairing.deviceId is unique, so the old pairing has to go before the new one can attach.
@@ -55,7 +56,7 @@ export async function POST(request: Request) {
           select,
         });
       } else {
-        registered = await transaction.device.create({ data: { name: parsed.data.name, tokenHash }, select });
+        registered = await transaction.device.create({ data: { name: parsed.data.name, tokenHash, ownerId: admin.id }, select });
       }
       await transaction.pairing.update({
         where: { id: pairing.id },
