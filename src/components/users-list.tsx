@@ -2,6 +2,7 @@
 
 import { ChangeEvent, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import PasswordInput from "@/components/password-input";
 
 type UserItem = {
   id: string;
@@ -91,7 +92,7 @@ export default function UsersList() {
       {loading ? <div className="empty-state"><span className="spinner" /></div> : (
         <div className="data-table-wrap">
           <table className="data-table">
-            <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Role</th><th>TVs</th><th>Online</th><th /></tr></thead>
+            <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Role</th><th>TVs</th><th>Live</th><th /></tr></thead>
             <tbody>{users.map((user) => (
               <tr key={user.id}>
                 <td className="mono">{user.id}</td>
@@ -112,7 +113,7 @@ export default function UsersList() {
           {formError && <div className="notice error" role="alert">{formError}</div>}
           <label className="field">Name<input required autoFocus maxLength={60} value={name} onChange={(event) => setName(event.target.value)} /></label>
           <label className="field">Email<input required type="email" autoComplete="off" maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-          <label className="field">Password (at least {MIN_PASSWORD_LENGTH} characters)<input required type="password" autoComplete="new-password" minLength={MIN_PASSWORD_LENGTH} maxLength={200} value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+          <label className="field">Password (at least {MIN_PASSWORD_LENGTH} characters)<PasswordInput required autoComplete="new-password" minLength={MIN_PASSWORD_LENGTH} maxLength={200} value={password} onChange={(event) => setPassword(event.target.value)} /></label>
           <div className="modal-actions"><button type="button" className="button" onClick={closeModal}>Cancel</button><button type="submit" className="button primary" disabled={busy}>{busy ? "Creating..." : "Create user"}</button></div>
         </form>
       </div>}

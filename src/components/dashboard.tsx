@@ -303,7 +303,7 @@ export default function Dashboard({ email, userId, superAdmin, view }: { email: 
           {notice && <div className="notice" role="status">{notice}</div>}
           {view === "overview" && <div className="metric-grid">
             <div className="metric"><div className="metric-label">Registered players</div><div className="metric-row"><span className="metric-value">{loading ? "—" : devices.length}</span><span className="metric-note">all registered screens</span></div></div>
-            <div className="metric"><div className="metric-label">Player connectivity</div><div className="metric-row"><span className="metric-dot" /><span className="metric-value">{loading ? "—" : devices.filter((device) => device.online).length}</span><span className="metric-note">online now</span></div></div>
+            <div className="metric"><div className="metric-label">Player connectivity</div><div className="metric-row"><span className="metric-dot" /><span className="metric-value">{loading ? "—" : devices.filter((device) => device.online).length}</span><span className="metric-note">live now</span></div></div>
             <div className="metric"><div className="metric-label">Media library</div><div className="metric-row"><span className="metric-value">{loading ? "—" : images.length}</span><span className="metric-note">reusable files</span></div></div>
           </div>}
           {view === "overview" && <div className="overview-links"><Link className="button" href="/players">Manage players</Link><Link className="button" href="/media">Open media library</Link></div>}
@@ -318,7 +318,7 @@ export default function Dashboard({ email, userId, superAdmin, view }: { email: 
                 return (
                 <article className="device-card" key={device.id}>
                   <div className="device-top">
-                    <div><div className="device-name"><span className={`status ${device.online ? "online" : ""}`}>{device.online ? "Online" : "Offline"}</span><h3>{device.name}</h3></div><div className="device-id">ID&nbsp; {device.deviceId}</div></div>
+                    <div><div className="device-name"><span className={`status ${device.online ? "online" : ""}`}>{device.online ? "Live" : "Offline"}</span><h3>{device.name}</h3></div><div className="device-id">ID&nbsp; {device.deviceId}</div></div>
                     <button className="button quiet" disabled={busy || !!device.revokedAt} onClick={() => { setNewName(device.name); setRenaming(device); }}>Rename</button>
                   </div>
                   <div className="preview-wrap">
@@ -396,7 +396,7 @@ export default function Dashboard({ email, userId, superAdmin, view }: { email: 
               ))}</div>
             )}
           </section>}
-          {view === "players" && <p className="section-meta" style={{ marginTop: 32 }}>Online means the player app sent a heartbeat within 45 seconds. It does not confirm the connected television is powered on.</p>}
+          {view === "players" && <p className="section-meta" style={{ marginTop: 32 }}>Live means the player app sent a heartbeat within 45 seconds. It does not confirm the connected television is powered on.</p>}
         </div>
       </main>
       {modal && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closePairing(); }}>
@@ -420,7 +420,7 @@ export default function Dashboard({ email, userId, superAdmin, view }: { email: 
             <label className="link-option" key={device.id}>
               <input type="checkbox" checked={mirrorIds.includes(device.id)} onChange={() => setMirrorIds((previous) => previous.includes(device.id) ? previous.filter((id) => id !== device.id) : [...previous, device.id])} />
               <span>{device.name}</span>
-              <span className={`status ${device.online ? "online" : ""}`}>{device.online ? "Online" : "Offline"}</span>
+              <span className={`status ${device.online ? "online" : ""}`}>{device.online ? "Live" : "Offline"}</span>
             </label>
           ))}</div>
           <div className="modal-actions"><button type="button" className="button" onClick={() => setMirrorDevice(null)}>Cancel</button><button type="submit" className="button primary" disabled={busy}>Save</button></div>

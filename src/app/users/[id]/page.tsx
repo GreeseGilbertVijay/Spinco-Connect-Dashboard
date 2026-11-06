@@ -33,9 +33,9 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
   const now = new Date();
   const tvStatus = (device: { revokedAt: Date | null; lastSeenAt: Date | null }) => {
     if (device.revokedAt) return "Revoked";
-    return isPlayerOnline(device.lastSeenAt, now) ? "Online" : "Offline";
+    return isPlayerOnline(device.lastSeenAt, now) ? "Live" : "Offline";
   };
-  const online = user.devices.filter((device) => tvStatus(device) === "Online").length;
+  const online = user.devices.filter((device) => tvStatus(device) === "Live").length;
 
   return (
     <AdminShell email={admin.email} userId={admin.id} superAdmin={superAdmin} caption={adminName(user)}>
@@ -49,7 +49,7 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
       </div>
       <div className="metric-grid">
         <div className="metric"><div className="metric-label">TVs paired</div><div className="metric-row"><span className="metric-value">{user.devices.length}</span><span className="metric-note">registered by this user</span></div></div>
-        <div className="metric"><div className="metric-label">Player connectivity</div><div className="metric-row"><span className="metric-dot" /><span className="metric-value">{online}</span><span className="metric-note">online now</span></div></div>
+        <div className="metric"><div className="metric-label">Player connectivity</div><div className="metric-row"><span className="metric-dot" /><span className="metric-value">{online}</span><span className="metric-note">live now</span></div></div>
       </div>
       <section>
         <div className="section-head"><h2>TVs</h2></div>
@@ -61,7 +61,7 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
                 <tr key={device.id}>
                   <td>{device.name}</td>
                   <td className="mono">{device.deviceId}</td>
-                  <td>{tvStatus(device)}</td>
+                  <td><span className={`status ${tvStatus(device) === "Live" ? "online" : ""}`}>{tvStatus(device)}</span></td>
                   <td>{showing(device)}</td>
                   <td>{device.lastSeenAt?.toLocaleString() ?? "Never connected"}</td>
                   <td>{device.createdAt.toLocaleDateString()}</td>

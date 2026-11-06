@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import PasswordInput from "@/components/password-input";
 
 export default function LoginForm() {
   const router = useRouter();
@@ -39,7 +40,7 @@ export default function LoginForm() {
         <h1>Welcome back</h1>
         <p className="subheading">Sign in to manage your signage players and screen content.</p>
         <label className="field">Email address<input autoComplete="username" type="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-        <label className="field">Password<input autoComplete="current-password" type="password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+        <label className="field">Password<PasswordInput autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
         {error && <div className="login-error" role="alert">{error}</div>}
         <button className="button primary" disabled={loading} type="submit">{loading ? "Signing in..." : "Sign in"}</button>
       </form>
