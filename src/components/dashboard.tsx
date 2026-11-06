@@ -3,7 +3,8 @@
 import { ChangeEvent, useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import AccountLink from "@/components/account-link";
+import AppSidebar from "@/components/app-sidebar";
 
 type ImageItem = { id: string; name: string; mimeType: string; size: number; createdAt: string; assignedCount: number; url: string };
 type DeviceItem = {
@@ -85,7 +86,6 @@ const VIEW_TEXT: Record<DashboardView, { caption: string; eyebrow: string; title
 };
 
 export default function Dashboard({ email, userId, superAdmin, view }: { email: string; userId: string; superAdmin: boolean; view: DashboardView }) {
-  const router = useRouter();
   const [devices, setDevices] = useState<DeviceItem[]>([]);
   const [images, setImages] = useState<ImageItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -270,29 +270,13 @@ export default function Dashboard({ email, userId, superAdmin, view }: { email: 
     }, "Image uploaded to your library.");
   }
 
-  async function logout() {
-    await action(async () => {
-      await request("/api/auth/logout", { method: "POST" });
-      router.replace("/login");
-      router.refresh();
-    }, "Signed out.");
-  }
-
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand"><Image className="brand-mark" src="/logo.png" alt="Spinco logo" width={40} height={40} loading="eager" /><span className="brand-text">SPINCO CONNECT</span></div>
-        <div className="side-label">Workspace</div>
-        <Link className={`nav-item ${view === "overview" ? "active" : ""}`} href="/"><span className="nav-icon">▦</span><span>Overview</span></Link>
-        <Link className={`nav-item ${view === "players" ? "active" : ""}`} href="/players"><span className="nav-icon">▣</span><span>Players</span></Link>
-        <Link className={`nav-item ${view === "media" ? "active" : ""}`} href="/media"><span className="nav-icon">▧</span><span>Media library</span></Link>
-        <Link className="nav-item" href={superAdmin ? "/users" : `/users/${userId}`}><span className="nav-icon">▤</span><span>{superAdmin ? "Users" : "My TVs"}</span></Link>
-        <div className="side-foot">Player connectivity is not a physical TV power indicator.<br />Spinco Connect · Local deployment</div>
-      </aside>
+      <AppSidebar active={view} userId={userId} superAdmin={superAdmin} />
       <main className="main-area">
         <header className="topbar">
           <div className="topbar-caption">Workspace&nbsp; / &nbsp;<strong>{VIEW_TEXT[view].caption}</strong></div>
-          <div className="account"><span>{email}</span><button className="button quiet" onClick={() => void logout()} disabled={busy}>Sign out</button><span className="avatar">{email.charAt(0).toUpperCase()}</span>{serverOffline && <button className="server-dot" aria-label="Server offline. Open reconnect options" title="Server offline" onClick={() => { setServerRetryFailed(false); setServerPopup(true); }} />}</div>
+          <div className="account"><AccountLink email={email} />{serverOffline && <button className="server-dot" aria-label="Server offline. Open reconnect options" title="Server offline" onClick={() => { setServerRetryFailed(false); setServerPopup(true); }} />}</div>
         </header>
         <div className="content">
           <div className="page-heading">
