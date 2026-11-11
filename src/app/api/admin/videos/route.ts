@@ -1,4 +1,5 @@
 import { requireAdmin } from "@/lib/auth";
+import { DriveError } from "@/lib/drive";
 import { assertSameOrigin, errorResponse } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { deleteStoredImage, MAX_VIDEO_BYTES, saveVideoStream, UnsupportedVideoError, UploadTooLargeError } from "@/lib/storage";
@@ -19,16 +20,22 @@ export async function POST(request: Request) {
     return errorResponse("Videos must be smaller than 200 MB.", 413);
   }
   if (!request.body) return errorResponse("Choose a video to upload.", 400);
+  const originalName = fileName(request);
   let saved: Awaited<ReturnType<typeof saveVideoStream>>;
   try {
-    saved = await saveVideoStream(request.body);
+    saved = await saveVideoStream(request.body, originalName);
   } catch (reason) {
     if (reason instanceof UploadTooLargeError) return errorResponse("Videos must be smaller than 200 MB.", 413);
     if (reason instanceof UnsupportedVideoError) return errorResponse("Only MP4 and WebM video files are supported.", 415);
+    if (reason instanceof DriveError) {
+      console.error(reason);
+      // Not a 5xx: the dashboard reads those as the server being offline.
+      return errorResponse("The video could not be uploaded to Google Drive. Please try again.", 424);
+    }
     throw reason;
   }
   try {
-    const image = await prisma.image.create({ data: { originalName: fileName(request), ...saved } });
+    const image = await prisma.image.create({ data: { originalName, ...saved } });
     return Response.json({ id: image.id, name: image.originalName, url: `/api/admin/images/${image.id}/file` }, { status: 201 });
   } catch (error) {
     await deleteStoredImage(saved.storageKey);

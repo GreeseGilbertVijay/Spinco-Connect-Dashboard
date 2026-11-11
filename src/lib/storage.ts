@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { createReadStream, openAsBlob } from "node:fs";
 import { mkdir, open, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import sharp from "sharp";
+import { driveFileId, driveFileResponse, driveStorageKey, isDriveConfigured, trashDriveFile, uploadToDrive } from "./drive";
 
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 export const MAX_IMAGE_REQUEST_BYTES = MAX_IMAGE_BYTES + 128 * 1024;
@@ -56,9 +57,10 @@ function resolveStorageKey(storageKey: string) {
   return resolved;
 }
 
-export async function saveImage(bytes: Uint8Array, mimeType: string) {
+export async function saveImage(bytes: Uint8Array, mimeType: string, name: string) {
   const extension = allowedTypes.get(mimeType);
   if (!extension) throw new Error("Unsupported image format");
+  if (isDriveConfigured()) return driveStorageKey(await uploadToDrive(name, new Blob([Buffer.from(bytes)], { type: mimeType })));
   const storageKey = `${randomUUID()}${extension}`;
   const directory = uploadDirectory();
   await mkdir(directory, { recursive: true });
@@ -76,6 +78,8 @@ export function parseByteRange(header: string | null, size: number) {
 
 // Returns null when the file is missing from disk so callers can answer with a clear 404.
 export async function storedFileResponse(storageKey: string, mimeType: string, cacheControl: string, rangeHeader: string | null) {
+  const driveId = driveFileId(storageKey);
+  if (driveId) return driveFileResponse(driveId, mimeType, cacheControl, rangeHeader);
   const filePath = resolveStorageKey(storageKey);
   let size: number;
   try {
@@ -104,6 +108,12 @@ export async function storedFileResponse(storageKey: string, mimeType: string, c
 }
 
 export async function deleteStoredImage(storageKey: string) {
+  const driveId = driveFileId(storageKey);
+  if (driveId) {
+    // The library record is already gone, so a leftover Drive file is only logged.
+    await trashDriveFile(driveId).catch((error) => console.error("Could not remove a file from Google Drive", error));
+    return;
+  }
   try {
     await unlink(resolveStorageKey(storageKey));
   } catch (error) {
@@ -119,8 +129,9 @@ export function isAllowedImageType(mimeType: string) {
 export class UploadTooLargeError extends Error {}
 export class UnsupportedVideoError extends Error {}
 
-// Videos are streamed to disk so a large upload is never held in memory.
-export async function saveVideoStream(body: ReadableStream<Uint8Array>) {
+// Videos are streamed to disk so a large upload is never held in memory. With Drive
+// configured that file is only a temporary copy, sent on once its format is verified.
+export async function saveVideoStream(body: ReadableStream<Uint8Array>, name: string) {
   const directory = uploadDirectory();
   await mkdir(directory, { recursive: true });
   const id = randomUUID();
@@ -147,6 +158,11 @@ export async function saveVideoStream(body: ReadableStream<Uint8Array>) {
     const mimeType = detectVideoType(header);
     const extension = mimeType && videoExtensions.get(mimeType);
     if (!mimeType || !extension) throw new UnsupportedVideoError("Unsupported video format");
+    if (isDriveConfigured()) {
+      const driveId = await uploadToDrive(name, await openAsBlob(temporaryPath, { type: mimeType }));
+      await unlink(temporaryPath).catch(() => undefined);
+      return { storageKey: driveStorageKey(driveId), mimeType, size };
+    }
     const storageKey = `${id}${extension}`;
     await rename(temporaryPath, resolveStorageKey(storageKey));
     return { storageKey, mimeType, size };

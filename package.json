@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "db:indexes": "node --env-file=.env --import tsx scripts/create-indexes.ts",
     "db:generate": "prisma generate",
+    "drive:auth": "node --env-file=.env --import tsx scripts/drive-auth.ts",
     "admin:create": "node --env-file=.env --import tsx scripts/create-admin.ts",
     "test": "vitest run"
   },

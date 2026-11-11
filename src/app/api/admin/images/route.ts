@@ -1,4 +1,5 @@
 import { requireAdmin } from "@/lib/auth";
+import { DriveError } from "@/lib/drive";
 import { assertSameOrigin, errorResponse } from "@/lib/http";
 import { playlistIds } from "@/lib/device-rules";
 import { prisma } from "@/lib/prisma";
@@ -60,11 +61,20 @@ export async function POST(request: Request) {
   } catch {
     return errorResponse("The uploaded image is malformed or cannot be decoded.", 415);
   }
-  const storageKey = await saveImage(bytes, mimeType);
+  const originalName = file.name.slice(0, 180) || "Uploaded image";
+  let storageKey: string;
+  try {
+    storageKey = await saveImage(bytes, mimeType, originalName);
+  } catch (reason) {
+    if (!(reason instanceof DriveError)) throw reason;
+    console.error(reason);
+    // Not a 5xx: the dashboard reads those as the server being offline.
+    return errorResponse("The image could not be uploaded to Google Drive. Please try again.", 424);
+  }
   try {
     const image = await prisma.image.create({
       data: {
-        originalName: file.name.slice(0, 180) || "Uploaded image",
+        originalName,
         storageKey,
         mimeType,
         size: bytes.byteLength,
