@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 // Live screen sharing from this browser to TVs over WebRTC. The server only relays the
 // connection details; the video goes straight from this computer to each TV.
@@ -195,7 +196,7 @@ export default function ScreenShare({ tvs, disabled }: { tvs: ShareTv[]; disable
       <button className="button" disabled={disabled || sharing || available.length === 0} title={available.length ? "Show this computer's screen live on TVs" : "No TV is online"} onClick={() => { setSelected(available.map((tv) => tv.id)); setPicking(true); }}>
         Share screen
       </button>
-      {(sharing || error) && <div className="share-panel" role="status">
+      {(sharing || error) && createPortal(<div className="share-panel" role="status">
         {error ? <span className="share-error">{error}</span> : <>
           <div className="share-head"><strong>Sharing your screen</strong><button className="button danger-solid" onClick={stopAll}>Stop sharing</button></div>
           <ul className="share-targets">{Object.entries(targets).map(([deviceId, target]) => (
@@ -207,8 +208,8 @@ export default function ScreenShare({ tvs, disabled }: { tvs: ShareTv[]; disable
           ))}</ul>
         </>}
         {error && <button className="button quiet" onClick={() => setError("")}>Dismiss</button>}
-      </div>}
-      {picking && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPicking(false); }}>
+      </div>, document.body)}
+      {picking && createPortal(<div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPicking(false); }}>
         <form className="modal" onSubmit={(event) => { event.preventDefault(); void start(); }}>
           <h2>Share screen</h2>
           <p>Choose the TVs to show this computer&apos;s screen on. Next, your browser asks which screen, window or tab to share. Tick &quot;Share audio&quot; there to play sound on the TVs. The TVs go back to their normal content when you stop.</p>
@@ -221,7 +222,7 @@ export default function ScreenShare({ tvs, disabled }: { tvs: ShareTv[]; disable
           ))}</div>
           <div className="modal-actions"><button type="button" className="button" onClick={() => setPicking(false)}>Cancel</button><button type="submit" className="button primary" disabled={selected.length === 0}>Choose screen</button></div>
         </form>
-      </div>}
+      </div>, document.body)}
     </>
   );
 }
