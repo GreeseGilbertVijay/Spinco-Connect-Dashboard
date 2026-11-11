@@ -84,6 +84,21 @@ model Pairing {
   @@map("spinco_connect_pairings")
 }
 
+// A live screen share from the dashboard to one TV, keyed by the TV's id so a TV has at
+// most one. Only the WebRTC connection details pass through here; the video goes
+// straight from the browser to the TV. A share the dashboard stops refreshing ends.
+model ScreenShare {
+  id        String   @id @map("_id")
+  sessionId String
+  offer     String
+  answer    String?
+  error     String?
+  aliveAt   DateTime
+  createdAt DateTime @default(now())
+
+  @@map("spinco_connect_screen_shares")
+}
+
 model RateLimit {
   key         String   @id @map("_id")
   count       Int      @default(0)

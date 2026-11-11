@@ -194,6 +194,14 @@ a.nav-item, a.button { text-decoration: none; }
 .link-list { display: grid; gap: 7px; max-height: 280px; margin-top: 14px; overflow-y: auto; }
 .link-option { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--field); color: var(--text-soft); font-size: 13px; cursor: pointer; }
 .link-option .status { margin-left: auto; }
+.heading-actions { display: flex; flex-wrap: wrap; gap: 9px; justify-content: flex-end; }
+/* Fixed so the share stays visible and stoppable while the page scrolls. */
+.share-panel { position: fixed; right: 18px; bottom: 18px; z-index: 9; display: grid; gap: 10px; width: min(360px, calc(100% - 36px)); padding: 14px 16px; border: 1px solid var(--border-strong); border-radius: 11px; background: var(--surface-raised); box-shadow: 0 16px 48px var(--shadow-lg); font-size: 13px; }
+.share-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.share-targets { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.share-targets li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; color: var(--text-soft); }
+.share-detail { flex-basis: 100%; color: var(--error-text); font-size: 12px; }
+.share-error { color: var(--error-text); }
 .modal.wide { width: min(620px,100%); }
 .modal h2 { margin: 0 0 8px; font-size: 20px; }
 .slide-picker { display: grid; grid-template-columns: repeat(auto-fill,minmax(130px,1fr)); gap: 9px; max-height: 320px; margin-top: 14px; overflow-y: auto; }
@@ -336,4 +344,93 @@ a.profile-stat:hover { border-color: var(--accent-border); box-shadow: 0 10px 26
 @media (prefers-reduced-motion: reduce) {
   .rise { animation: none; }
   a.profile-stat:hover, .theme-option:hover, .theme-toggle:hover { transform: none; }
+}
+
+/* Motion and polish: one easing and a few durations for every interaction, so the app moves as one piece. */
+:root { --ease: cubic-bezier(.2,.75,.25,1); --fast: .16s; --med: .28s; }
+body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
+::selection { background: var(--hero-glow); }
+html { scrollbar-color: var(--border-strong) transparent; }
+
+/* Focus is visible for keyboard users only, never on mouse click. */
+:where(button, a, select, input, [tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Sticky, frosted top bar keeps the account and theme controls in reach while scrolling. */
+.topbar { position: sticky; top: 0; z-index: 4; background: color-mix(in srgb, var(--background) 82%, transparent); backdrop-filter: saturate(1.4) blur(12px); -webkit-backdrop-filter: saturate(1.4) blur(12px); }
+
+/* Sidebar: an accent bar slides in beside the active item. */
+.nav-item { position: relative; }
+.nav-item::before { position: absolute; top: 50%; left: -18px; width: 3px; height: 0; border-radius: 0 3px 3px 0; background: var(--accent); content: ""; transform: translateY(-50%); transition: height var(--med) var(--ease); }
+.nav-item.active::before { height: 22px; }
+.nav-icon { transition: transform var(--med) var(--ease); }
+.nav-item:hover .nav-icon { transform: scale(1.12); }
+
+/* Page content rises in when a page opens, a beat apart. */
+.content > :not(.profile) { animation: rise .5s var(--ease) both; }
+.content > :nth-child(2):not(.profile) { animation-delay: 50ms; }
+.content > :nth-child(3):not(.profile) { animation-delay: 100ms; }
+.content > :nth-child(4):not(.profile) { animation-delay: 150ms; }
+.content > :nth-child(n+5):not(.profile) { animation-delay: 200ms; }
+.device-grid > *, .library-grid > * { animation: rise .45s var(--ease) both; }
+.device-grid > :nth-child(2), .library-grid > :nth-child(2) { animation-delay: 40ms; }
+.device-grid > :nth-child(3), .library-grid > :nth-child(3) { animation-delay: 80ms; }
+.device-grid > :nth-child(n+4), .library-grid > :nth-child(n+4) { animation-delay: 120ms; }
+
+/* Buttons: smooth colour changes and a small press. */
+.button { transition: background-color var(--fast) ease, border-color var(--fast) ease, color var(--fast) ease, box-shadow var(--fast) ease, transform var(--fast) var(--ease); }
+.button:not(:disabled):active { transform: scale(.97); }
+.button.primary:not(:disabled):hover { box-shadow: 0 6px 18px var(--hero-glow); }
+.button:disabled { cursor: not-allowed; }
+
+/* Fields and selects respond to hover and focus. */
+.select, .field input { transition: border-color var(--fast) ease, box-shadow var(--fast) ease, background-color var(--fast) ease; }
+.select:hover, .field input:hover { border-color: var(--accent-border); }
+.select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--hero-glow); }
+
+/* Cards: lift and glow on hover. Device cards stay put because they hold controls. */
+.metric, .device-card, .image-card, .data-table-wrap { transition: border-color var(--med) ease, box-shadow var(--med) ease, transform var(--med) var(--ease); }
+.metric:hover, .image-card:hover { border-color: var(--accent-border); box-shadow: 0 10px 28px var(--shadow-sm); transform: translateY(-3px); }
+.device-card:hover { border-color: var(--border-strong); box-shadow: 0 12px 32px var(--shadow-sm); }
+.image-thumb { overflow: hidden; }
+.image-thumb img, .image-thumb video, .preview-wrap img { transition: transform .5s var(--ease); }
+.image-card:hover .image-thumb img, .device-card:hover .preview-wrap img { transform: scale(1.04); }
+
+/* Tables: rows highlight under the pointer. */
+.data-table tbody tr { transition: background-color var(--fast) ease; }
+.data-table tbody tr:hover { background: var(--surface-hover); }
+
+/* Live status breathes so it reads as live at a glance. */
+.status.online::before { animation: live-pulse 2.4s ease-out infinite; }
+.metric-dot { animation: live-pulse 2.4s ease-out infinite; }
+@keyframes live-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--live) 55%, transparent); } 70%, 100% { box-shadow: 0 0 0 7px transparent; } }
+
+/* Notices slide in with an accent edge. */
+.notice { border-left-width: 3px; animation: notice-in .35s var(--ease) both; }
+@keyframes notice-in { from { opacity: 0; transform: translateY(-6px); } }
+
+/* Dialogs: the backdrop fades and blurs, the dialog scales up from slightly below. */
+.modal-backdrop { animation: fade-in .2s ease both; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+.modal { animation: modal-in .32s var(--ease) both; }
+.share-panel { animation: modal-in .32s var(--ease) both; }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes modal-in { from { opacity: 0; transform: translateY(12px) scale(.97); } }
+.link-option, .slide-option { transition: border-color var(--fast) ease, background-color var(--fast) ease, box-shadow var(--fast) ease; }
+.link-option:hover, .slide-option:hover { border-color: var(--accent-border); }
+
+/* Login card eases in. */
+.login-box { animation: modal-in .55s var(--ease) both; }
+
+/* Skeletons stand in for content while it loads, shaped like what will arrive. */
+.skeleton { position: relative; overflow: hidden; border-radius: 11px; background: var(--sunken); }
+.skeleton::after { position: absolute; inset: 0; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--surface-hover) 85%, transparent), transparent); content: ""; transform: translateX(-100%); animation: shimmer 1.4s ease-in-out infinite; }
+@keyframes shimmer { to { transform: translateX(100%); } }
+.skeleton-card { height: 416px; border: 1px solid var(--border); }
+.skeleton-tile { height: 172px; border: 1px solid var(--border); border-radius: 9px; }
+.skeleton-rows { display: grid; gap: 10px; padding: 14px; }
+.skeleton-row { height: 34px; border-radius: 7px; }
+.skeleton-value { display: inline-block; width: 46px; height: 29px; border-radius: 7px; vertical-align: middle; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  .metric:hover, .image-card:hover { transform: none; }
 }

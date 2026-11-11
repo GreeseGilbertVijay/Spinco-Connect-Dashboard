@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import AccountLink from "@/components/account-link";
 import AppSidebar from "@/components/app-sidebar";
+import ScreenShare from "@/components/screen-share";
 
 type ImageItem = { id: string; name: string; mimeType: string; size: number; createdAt: string; assignedCount: number; url: string };
 type DeviceItem = {
@@ -281,20 +282,23 @@ export default function Dashboard({ email, userId, superAdmin, view }: { email: 
         <div className="content">
           <div className="page-heading">
             <div><div className="eyebrow">{VIEW_TEXT[view].eyebrow}</div><h1>{VIEW_TEXT[view].title}</h1><p className="subheading">{VIEW_TEXT[view].subheading}</p></div>
-            {view !== "media" && <button className="button primary" onClick={() => { setError(""); setReconnecting(null); setModal(true); }}>＋&nbsp; Pair a TV</button>}
+            {view !== "media" && <div className="heading-actions">
+              {view === "players" && <ScreenShare tvs={devices.filter((device) => !device.revokedAt)} disabled={loading} />}
+              <button className="button primary" onClick={() => { setError(""); setReconnecting(null); setModal(true); }}>＋&nbsp; Pair a TV</button>
+            </div>}
           </div>
           {error && <div className="notice error" role="alert">{error}</div>}
           {notice && <div className="notice" role="status">{notice}</div>}
           {view === "overview" && <div className="metric-grid">
-            <div className="metric"><div className="metric-label">Registered players</div><div className="metric-row"><span className="metric-value">{loading ? "—" : devices.length}</span><span className="metric-note">all registered screens</span></div></div>
-            <div className="metric"><div className="metric-label">Player connectivity</div><div className="metric-row"><span className="metric-dot" /><span className="metric-value">{loading ? "—" : devices.filter((device) => device.online).length}</span><span className="metric-note">live now</span></div></div>
-            <div className="metric"><div className="metric-label">Media library</div><div className="metric-row"><span className="metric-value">{loading ? "—" : images.length}</span><span className="metric-note">reusable files</span></div></div>
+            <div className="metric"><div className="metric-label">Registered players</div><div className="metric-row"><span className="metric-value">{loading ? <span className="skeleton skeleton-value" /> : devices.length}</span><span className="metric-note">all registered screens</span></div></div>
+            <div className="metric"><div className="metric-label">Player connectivity</div><div className="metric-row"><span className="metric-dot" /><span className="metric-value">{loading ? <span className="skeleton skeleton-value" /> : devices.filter((device) => device.online).length}</span><span className="metric-note">live now</span></div></div>
+            <div className="metric"><div className="metric-label">Media library</div><div className="metric-row"><span className="metric-value">{loading ? <span className="skeleton skeleton-value" /> : images.length}</span><span className="metric-note">reusable files</span></div></div>
           </div>}
           {view === "overview" && <div className="overview-links"><Link className="button" href="/players">Manage players</Link><Link className="button" href="/media">Open media library</Link></div>}
 
           {view === "players" && <section id="player-list">
             <div className="section-head"><h2>Players</h2><span className="section-meta">Connectivity updates every 10 seconds</span></div>
-            {loading ? <div className="empty-state"><span className="spinner" /></div> : devices.length === 0 ? (
+            {loading ? <div className="device-grid" aria-busy="true" aria-label="Loading players">{[0, 1].map((key) => <div key={key} className="skeleton skeleton-card" />)}</div> : devices.length === 0 ? (
               <div className="empty-state"><strong>No TVs connected yet</strong>Open the Spinco Connect app on your TV, then pair it using the code on screen.</div>
             ) : (
               <div className="device-grid">{devices.map((device) => {
@@ -363,7 +367,7 @@ export default function Dashboard({ email, userId, superAdmin, view }: { email: 
 
           {view === "media" && <section id="library">
             <div className="section-head"><div><h2>Media library</h2><span className="section-meta">Images: JPEG, PNG, GIF or WebP up to 10 MB · Videos: MP4 or WebM up to 200 MB</span></div><label className="button" htmlFor="media-upload">＋&nbsp; Upload media</label><input id="media-upload" type="file" accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm" hidden disabled={busy} onChange={(event) => void uploadMedia(event)} /></div>
-            {loading ? <div className="empty-state"><span className="spinner" /></div> : images.length === 0 ? <div className="empty-state"><strong>Your media library is empty</strong>Upload an image or video to assign it to one or more TVs.</div> : (
+            {loading ? <div className="library-grid" aria-busy="true" aria-label="Loading media">{[0, 1, 2, 3].map((key) => <div key={key} className="skeleton skeleton-tile" />)}</div> : images.length === 0 ? <div className="empty-state"><strong>Your media library is empty</strong>Upload an image or video to assign it to one or more TVs.</div> : (
               <div className="library-grid">{images.map((image) => (
                 <article className="image-card" key={image.id}>
                   <div className="image-thumb"><MediaPreview item={image} alt={image.name} /></div>

@@ -89,7 +89,7 @@ export default function UsersList() {
       </div>
       {error && <div className="notice error" role="alert">{error}</div>}
       {notice && <div className="notice" role="status">{notice}</div>}
-      {loading ? <div className="empty-state"><span className="spinner" /></div> : (
+      {loading ? <div className="data-table-wrap skeleton-rows" aria-busy="true" aria-label="Loading users">{[0, 1, 2, 3].map((key) => <div key={key} className="skeleton skeleton-row" />)}</div> : (
         <div className="data-table-wrap">
           <table className="data-table">
             <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Role</th><th>TVs</th><th>Live</th><th /></tr></thead>
