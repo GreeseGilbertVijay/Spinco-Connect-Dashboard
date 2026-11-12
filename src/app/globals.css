@@ -202,6 +202,8 @@ a.nav-item, a.button { text-decoration: none; }
 .share-targets li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; color: var(--text-soft); }
 .share-detail { flex-basis: 100%; color: var(--error-text); font-size: 12px; }
 .share-error { color: var(--error-text); }
+.share-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.share-actions .button { flex: 1; }
 .modal.wide { width: min(620px,100%); }
 .modal h2 { margin: 0 0 8px; font-size: 20px; }
 .slide-picker { display: grid; grid-template-columns: repeat(auto-fill,minmax(130px,1fr)); gap: 9px; max-height: 320px; margin-top: 14px; overflow-y: auto; }
