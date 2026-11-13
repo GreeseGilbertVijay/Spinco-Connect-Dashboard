@@ -2,7 +2,10 @@ import { createHash, createCipheriv, createDecipheriv, randomBytes, timingSafeEq
 import { SignJWT, jwtVerify } from "jose";
 
 const SESSION_COOKIE = "spinco_session";
-const SESSION_LIFETIME_SECONDS = 60 * 60 * 12;
+// Sliding session: it lasts a week from the last visit, because src/proxy.ts swaps in a fresh
+// token once the current one is a day old. Only a week without opening the app signs you out.
+const SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 7;
+const SESSION_RENEW_AFTER_SECONDS = 60 * 60 * 24;
 
 function sessionSecret() {
   const secret = process.env.SESSION_SECRET;
@@ -49,11 +52,27 @@ export async function verifySessionToken(token: string) {
   }
 }
 
+// A fresh token for a valid session that is due for renewal; null when it is invalid or still fresh.
+export async function renewSessionToken(token: string, now = Date.now()) {
+  const secret = sessionSecret();
+  try {
+    const { payload } = await jwtVerify(token, secret, { algorithms: ["HS256"] });
+    if (typeof payload.sub !== "string" || typeof payload.iat !== "number") return null;
+    if (now / 1000 - payload.iat < SESSION_RENEW_AFTER_SECONDS) return null;
+    return await createSessionToken(payload.sub, typeof payload.email === "string" ? payload.email : "");
+  } catch {
+    return null;
+  }
+}
+
 export function sessionCookieOptions() {
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "strict" as const,
+    // "lax", not "strict": strict drops the cookie when the app is opened from a link on another
+    // site (the hosting panel, chat, email), which looked like being signed out. Cross-site POSTs
+    // still get no cookie under lax, and every admin POST/DELETE also checks the Origin header.
+    sameSite: "lax" as const,
     path: "/",
     maxAge: SESSION_LIFETIME_SECONDS,
   };

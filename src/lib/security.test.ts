@@ -5,7 +5,9 @@ import {
   deviceTokenHash,
   encryptDeviceToken,
   newDeviceToken,
+  renewSessionToken,
   safeStringEqual,
+  sessionCookieOptions,
   verifySessionToken,
 } from "./security";
 
@@ -19,6 +21,19 @@ describe("admin session authentication", () => {
     const token = await createSessionToken("admin-id", "admin@example.test");
     expect(await verifySessionToken(token)).toEqual({ id: "admin-id", email: "admin@example.test" });
     expect(await verifySessionToken(`${token}x`)).toBeNull();
+  });
+
+  it("renews a session only once it is a day old, keeping the same admin", async () => {
+    const token = await createSessionToken("admin-id", "admin@example.test");
+    expect(await renewSessionToken(token)).toBeNull();
+    const renewed = await renewSessionToken(token, Date.now() + 25 * 60 * 60 * 1000);
+    expect(renewed).toEqual(expect.any(String));
+    expect(await verifySessionToken(renewed!)).toEqual({ id: "admin-id", email: "admin@example.test" });
+    expect(await renewSessionToken(`${token}x`, Date.now() + 25 * 60 * 60 * 1000)).toBeNull();
+  });
+
+  it("keeps the session cookie on links from other sites and for a week", () => {
+    expect(sessionCookieOptions()).toMatchObject({ httpOnly: true, sameSite: "lax", maxAge: 7 * 24 * 60 * 60 });
   });
 });
 
