@@ -69,7 +69,7 @@ export async function POST(request: Request) {
     if (!(reason instanceof DriveError)) throw reason;
     console.error(reason);
     // Not a 5xx: the dashboard reads those as the server being offline.
-    return errorResponse("The image could not be uploaded to Google Drive. Please try again.", 424);
+    return errorResponse(`The image could not be uploaded to Google Drive. ${reason.message.slice(0, 300)}`, 424);
   }
   try {
     const image = await prisma.image.create({
