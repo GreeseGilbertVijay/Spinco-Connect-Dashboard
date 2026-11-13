@@ -35,10 +35,49 @@ const MAX_SLIDES = 20;
 const MIN_SLIDE_SECONDS = 3;
 const MAX_SLIDE_SECONDS = 900;
 
-function MediaPreview({ item, alt }: { item: { mimeType: string; url: string }; alt: string }) {
-  return item.mimeType.startsWith("video/")
-    ? <video src={item.url} aria-label={alt} muted playsInline preload="metadata" controls />
-    : <Image src={item.url} alt={alt} width={800} height={450} unoptimized />;
+// Files kept in Google Drive pass through the server, so a shimmer shows until each one arrives.
+function MediaPreview(props: { item: { mimeType: string; url: string }; alt: string }) {
+  // Keyed so the shimmer comes back when a TV switches to a different file.
+  return <LoadingMedia key={props.item.url} {...props} />;
+}
+
+function LoadingMedia({ item, alt }: { item: { mimeType: string; url: string }; alt: string }) {
+  const [loaded, setLoaded] = useState(false);
+  const done = () => setLoaded(true);
+  return <>
+    {!loaded && <span className="media-loading" aria-hidden="true" />}
+    {item.mimeType.startsWith("video/")
+      ? <video src={item.url} aria-label={alt} muted playsInline preload="metadata" controls onLoadedData={done} onError={done} />
+      : <Image src={item.url} alt={alt} width={800} height={450} unoptimized onLoad={done} onError={done} />}
+  </>;
+}
+
+type Upload = { name: string; percent: number; preview: string | null };
+
+// fetch cannot report upload progress, so uploads use XMLHttpRequest.
+function uploadWithProgress(url: string, body: XMLHttpRequestBodyInit, headers: Record<string, string>, onProgress: (percent: number) => void) {
+  return new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    for (const [name, value] of Object.entries(headers)) xhr.setRequestHeader(name, value);
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable) onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+    });
+    xhr.addEventListener("load", () => {
+      let message: string | undefined;
+      try {
+        message = (JSON.parse(xhr.responseText) as { error?: string }).error;
+      } catch {
+        message = undefined;
+      }
+      if (xhr.status >= 500) reject(new ConnectionError(message ?? "The server is not responding."));
+      else if (xhr.status >= 400) reject(new Error(message ?? "Upload failed. Please try again."));
+      else resolve();
+    });
+    xhr.addEventListener("error", () => reject(new ConnectionError("The server could not be reached.")));
+    xhr.addEventListener("abort", () => reject(new Error("The upload was cancelled.")));
+    xhr.send(body);
+  });
 }
 
 function deviceStatus(device: DeviceItem, actionError?: string) {
@@ -110,6 +149,7 @@ export default function Dashboard({ email, userId, superAdmin, view }: { email: 
   const [serverPopup, setServerPopup] = useState(false);
   const [serverRetrying, setServerRetrying] = useState(false);
   const [serverRetryFailed, setServerRetryFailed] = useState(false);
+  const [upload, setUpload] = useState<Upload | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -250,26 +290,41 @@ export default function Dashboard({ email, userId, superAdmin, view }: { email: 
     const file = event.target.files?.[0];
     if (!file) return;
     event.target.value = "";
-    if (file.type.startsWith("video/")) {
-      if (file.size > MAX_VIDEO_BYTES) {
-        setError("Videos must be smaller than 200 MB.");
-        return;
-      }
-      await action(async () => {
-        await request("/api/admin/videos", { method: "POST", headers: { "Content-Type": file.type, "X-File-Name": encodeURIComponent(file.name) }, body: file });
-      }, "Video uploaded to your library.");
+    const video = file.type.startsWith("video/");
+    if (video && file.size > MAX_VIDEO_BYTES) {
+      setError("Videos must be smaller than 200 MB.");
       return;
     }
-    if (file.size > MAX_IMAGE_BYTES) {
+    if (!video && file.size > MAX_IMAGE_BYTES) {
       setError("Images must be smaller than 10 MB.");
       return;
     }
-    const body = new FormData();
-    body.set("file", file);
-    await action(async () => {
-      await request("/api/admin/images", { method: "POST", body });
-    }, "Image uploaded to your library.");
+    const preview = video ? null : URL.createObjectURL(file);
+    const onProgress = (percent: number) => setUpload((current) => current && { ...current, percent });
+    setUpload({ name: file.name, percent: 0, preview });
+    let body: XMLHttpRequestBodyInit = file;
+    if (!video) {
+      const form = new FormData();
+      form.set("file", file);
+      body = form;
+    }
+    try {
+      await action(
+        () => uploadWithProgress(
+          video ? "/api/admin/videos" : "/api/admin/images",
+          body,
+          video ? { "Content-Type": file.type, "X-File-Name": encodeURIComponent(file.name) } : {},
+          onProgress,
+        ),
+        video ? "Video uploaded to your library." : "Image uploaded to your library.",
+      );
+    } finally {
+      setUpload(null);
+      if (preview) URL.revokeObjectURL(preview);
+    }
   }
+
+  const uploadStage = upload && (upload.percent < 100 ? `Uploading ${upload.percent}%` : "Saving to Google Drive...");
 
   return (
     <div className="app-shell">
@@ -366,9 +421,20 @@ export default function Dashboard({ email, userId, superAdmin, view }: { email: 
           </section>}
 
           {view === "media" && <section id="library">
-            <div className="section-head"><div><h2>Media library</h2><span className="section-meta">Images: JPEG, PNG, GIF or WebP up to 10 MB · Videos: MP4 or WebM up to 200 MB</span></div><label className="button" htmlFor="media-upload">＋&nbsp; Upload media</label><input id="media-upload" type="file" accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm" hidden disabled={busy} onChange={(event) => void uploadMedia(event)} /></div>
-            {loading ? <div className="library-grid" aria-busy="true" aria-label="Loading media">{[0, 1, 2, 3].map((key) => <div key={key} className="skeleton skeleton-tile" />)}</div> : images.length === 0 ? <div className="empty-state"><strong>Your media library is empty</strong>Upload an image or video to assign it to one or more TVs.</div> : (
-              <div className="library-grid">{images.map((image) => (
+            <div className="section-head"><div><h2>Media library</h2><span className="section-meta">Images: JPEG, PNG, GIF or WebP up to 10 MB · Videos: MP4 or WebM up to 200 MB</span></div><label className={`button${busy ? " is-disabled" : ""}`} htmlFor="media-upload" aria-disabled={busy}>{upload ? <><span className="spinner small" aria-hidden="true" />{uploadStage}</> : <>＋&nbsp; Upload media</>}</label><input id="media-upload" type="file" accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm" hidden disabled={busy} onChange={(event) => void uploadMedia(event)} /></div>
+            {loading ? <div className="library-grid" aria-busy="true" aria-label="Loading media">{[0, 1, 2, 3].map((key) => <div key={key} className="skeleton skeleton-tile" />)}</div> : images.length === 0 && !upload ? <div className="empty-state"><strong>Your media library is empty</strong>Upload an image or video to assign it to one or more TVs.</div> : (
+              <div className="library-grid">{upload && (
+                <article className="image-card uploading" aria-busy="true">
+                  <div className="image-thumb">
+                    {upload.preview && <Image src={upload.preview} alt="" width={800} height={450} unoptimized />}
+                    <div className="upload-overlay"><span className="spinner" aria-hidden="true" /></div>
+                  </div>
+                  <div className="upload-progress" role="progressbar" aria-label={`Uploading ${upload.name}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={upload.percent}>
+                    <span className={upload.percent >= 100 ? "indeterminate" : ""} style={{ width: `${upload.percent}%` }} />
+                  </div>
+                  <div className="image-details"><div><strong title={upload.name}>{upload.name}</strong><span role="status">{uploadStage}</span></div></div>
+                </article>
+              )}{images.map((image) => (
                 <article className="image-card" key={image.id}>
                   <div className="image-thumb"><MediaPreview item={image} alt={image.name} /></div>
                   <div className="image-details"><div><strong title={image.name}>{image.name}</strong><span>{formatSize(image.size)} · {image.assignedCount} assigned</span></div>

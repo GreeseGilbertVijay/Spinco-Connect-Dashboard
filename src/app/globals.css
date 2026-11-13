@@ -226,6 +226,20 @@ a.nav-item, a.button { text-decoration: none; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 23px; }
 .spinner { width: 17px; height: 17px; border: 2px solid var(--border-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.spinner.small { width: 13px; height: 13px; margin-right: 7px; }
+label.button { display: inline-flex; align-items: center; }
+label.button.is-disabled { opacity: .6; pointer-events: none; }
+.image-thumb { position: relative; overflow: hidden; }
+.media-loading { position: absolute; inset: 0; overflow: hidden; background: var(--sunken); }
+.media-loading::after { position: absolute; inset: 0; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--surface-hover) 85%, transparent), transparent); content: ""; transform: translateX(-100%); animation: shimmer 1.4s ease-in-out infinite; }
+.image-card.uploading { border-color: var(--accent-border); }
+.image-card.uploading .image-thumb img { opacity: .45; filter: blur(1px); }
+.upload-overlay { position: absolute; inset: 0; display: grid; place-items: center; }
+.upload-overlay .spinner { width: 26px; height: 26px; border-width: 3px; }
+.upload-progress { position: relative; height: 4px; overflow: hidden; background: var(--sunken); }
+.upload-progress span { display: block; height: 100%; background: var(--accent); transition: width .2s ease; }
+.upload-progress span.indeterminate { width: 40% !important; animation: upload-slide 1.1s ease-in-out infinite; }
+@keyframes upload-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
 .login-screen { display: grid; min-height: 100vh; padding: 20px; place-items: center; background: radial-gradient(ellipse at 50% 0%,var(--login-glow) 0%,var(--login-base) 58%); }
 .login-box { width: min(430px,100%); padding: 36px; border: 1px solid var(--border); border-radius: 15px; background: var(--surface); box-shadow: 0 25px 80px var(--shadow-lg); }
 .login-box .brand { padding: 0 0 25px; }
