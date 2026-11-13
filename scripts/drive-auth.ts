@@ -1,12 +1,15 @@
 import { randomBytes } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import path from "node:path";
 
 // One-time sign-in. Saves GOOGLE_DRIVE_REFRESH_TOKEN to .env so the server can use Drive.
 const SCOPE = "https://www.googleapis.com/auth/drive";
 const ENV_PATH = path.join(process.cwd(), ".env");
+// A fixed address, so it can be listed under "Authorized redirect URIs" on a Web application client.
+// Desktop app clients accept it as is.
+const PORT = 53682;
+const REDIRECT_URI = `http://127.0.0.1:${PORT}`;
 
 async function saveRefreshToken(token: string) {
   const line = `GOOGLE_DRIVE_REFRESH_TOKEN="${token}"`;
@@ -50,7 +53,7 @@ async function main() {
         response.writeHead(404).end();
         return;
       }
-      const redirectUri = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      const redirectUri = REDIRECT_URI;
       const finish = (message: string, error?: Error) => {
         response.writeHead(error ? 400 : 200, { "Content-Type": "text/plain; charset=utf-8" }).end(message);
         server.close();
@@ -72,10 +75,10 @@ async function main() {
       })().catch((error: Error) => finish("Sign-in failed. Check the terminal.", error));
     });
     server.on("error", reject);
-    server.listen(0, "127.0.0.1", () => {
+    server.listen(PORT, "127.0.0.1", () => {
       const parameters = new URLSearchParams({
         client_id: clientId,
-        redirect_uri: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+        redirect_uri: REDIRECT_URI,
         response_type: "code",
         scope: SCOPE,
         access_type: "offline",
