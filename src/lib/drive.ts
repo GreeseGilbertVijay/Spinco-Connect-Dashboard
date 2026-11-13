@@ -11,11 +11,18 @@ export class DriveError extends Error {}
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
 
+const SETTING_NAMES = ["GOOGLE_DRIVE_CLIENT_ID", "GOOGLE_DRIVE_CLIENT_SECRET", "GOOGLE_DRIVE_REFRESH_TOKEN", "GOOGLE_DRIVE_FOLDER_ID"] as const;
+
+// Hosting panels often keep quotes pasted from a .env file as part of the value.
+function setting(name: (typeof SETTING_NAMES)[number]) {
+  return process.env[name]?.trim().replace(/^(["'])(.*)\1$/, "$2").trim() || undefined;
+}
+
 function credentials() {
-  const clientId = process.env.GOOGLE_DRIVE_CLIENT_ID?.trim();
-  const clientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET?.trim();
-  const refreshToken = process.env.GOOGLE_DRIVE_REFRESH_TOKEN?.trim();
-  const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID?.trim();
+  const clientId = setting("GOOGLE_DRIVE_CLIENT_ID");
+  const clientSecret = setting("GOOGLE_DRIVE_CLIENT_SECRET");
+  const refreshToken = setting("GOOGLE_DRIVE_REFRESH_TOKEN");
+  const folderId = setting("GOOGLE_DRIVE_FOLDER_ID");
   return clientId && clientSecret && refreshToken && folderId ? { clientId, clientSecret, refreshToken, folderId } : null;
 }
 
@@ -34,7 +41,10 @@ export function driveFileId(storageKey: string) {
 
 function requireCredentials() {
   const configured = credentials();
-  if (!configured) throw new DriveError("Google Drive is not configured on the server");
+  if (!configured) {
+    const missing = SETTING_NAMES.filter((name) => !setting(name));
+    throw new DriveError(`Google Drive is not configured on the server. Missing: ${missing.join(", ")}`);
+  }
   return configured;
 }
 

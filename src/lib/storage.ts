@@ -4,7 +4,7 @@ import { mkdir, open, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import sharp from "sharp";
-import { driveFileId, driveFileResponse, driveStorageKey, isDriveConfigured, trashDriveFile, uploadToDrive } from "./drive";
+import { DriveError, driveFileId, driveFileResponse, driveStorageKey, isDriveConfigured, trashDriveFile, uploadToDrive } from "./drive";
 
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 export const MAX_IMAGE_REQUEST_BYTES = MAX_IMAGE_BYTES + 128 * 1024;
@@ -79,7 +79,16 @@ export function parseByteRange(header: string | null, size: number) {
 // Returns null when the file is missing from disk so callers can answer with a clear 404.
 export async function storedFileResponse(storageKey: string, mimeType: string, cacheControl: string, rangeHeader: string | null) {
   const driveId = driveFileId(storageKey);
-  if (driveId) return driveFileResponse(driveId, mimeType, cacheControl, rangeHeader);
+  if (driveId) {
+    try {
+      return await driveFileResponse(driveId, mimeType, cacheControl, rangeHeader);
+    } catch (error) {
+      // Said plainly instead of a bare 500, so a wrong server setting can be seen from the dashboard.
+      if (!(error instanceof DriveError)) throw error;
+      console.error("Google Drive read failed", error);
+      return Response.json({ error: error.message }, { status: 502, headers: { "Cache-Control": "no-store" } });
+    }
+  }
   const filePath = resolveStorageKey(storageKey);
   let size: number;
   try {

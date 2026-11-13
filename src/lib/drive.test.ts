@@ -90,3 +90,18 @@ describe("trashDriveFile", () => {
     expect(JSON.parse(call?.init?.body as string)).toEqual({ trashed: true });
   });
 });
+
+describe("drive settings", () => {
+  it("ignores quotes pasted around a value", async () => {
+    vi.stubEnv("GOOGLE_DRIVE_FOLDER_ID", " 'folder' ");
+    const calls = stubDrive((url) => url === SESSION_URL ? Response.json({ id: "new" }) : new Response(null, { headers: { location: SESSION_URL } }));
+    await uploadToDrive("a.png", new Blob(["x"], { type: "image/png" }));
+    expect(JSON.parse(String(calls.find((call) => call.url.includes("uploadType"))?.init?.body)).parents).toEqual(["folder"]);
+  });
+
+  it("names the missing settings", async () => {
+    vi.stubEnv("GOOGLE_DRIVE_REFRESH_TOKEN", "\"\"");
+    expect(isDriveConfigured()).toBe(false);
+    await expect(uploadToDrive("a.png", new Blob(["x"]))).rejects.toThrow("Missing: GOOGLE_DRIVE_REFRESH_TOKEN");
+  });
+});
